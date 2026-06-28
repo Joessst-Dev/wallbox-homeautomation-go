@@ -60,6 +60,83 @@ var _ = Describe("Charge sessions", func() {
 		})
 	})
 
+	Describe("FlushSession", func() {
+		It("updates energy metrics while keeping the session open", func() {
+			startedAt := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
+			id, err := s.StartSession(ctx, startedAt, "surplus", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			open, err := s.OpenSession(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(open.EnergyWh).To(Equal(0.0))
+			Expect(open.AvgChargeW).To(Equal(0.0))
+			Expect(open.PeakChargeW).To(Equal(0.0))
+
+			Expect(s.FlushSession(ctx, id, 1234.5, 617.25, 750.0)).To(Succeed())
+
+			open, err = s.OpenSession(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(open).NotTo(BeNil())
+			Expect(open.EnergyWh).To(Equal(1234.5))
+			Expect(open.AvgChargeW).To(Equal(617.25))
+			Expect(open.PeakChargeW).To(Equal(750.0))
+			Expect(open.EndedAt).To(BeNil())
+		})
+
+		It("overwrites a previous flush with the latest accumulators", func() {
+			startedAt := time.Date(2026, 6, 28, 11, 0, 0, 0, time.UTC)
+			id, err := s.StartSession(ctx, startedAt, "surplus", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(s.FlushSession(ctx, id, 100.0, 400.0, 500.0)).To(Succeed())
+			Expect(s.FlushSession(ctx, id, 200.0, 420.0, 550.0)).To(Succeed())
+
+			open, err := s.OpenSession(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(open.EnergyWh).To(Equal(200.0))
+			Expect(open.AvgChargeW).To(Equal(420.0))
+			Expect(open.PeakChargeW).To(Equal(550.0))
+		})
+
+		It("errors on a non-existent session", func() {
+			Expect(s.FlushSession(ctx, 999, 0, 0, 0)).To(HaveOccurred())
+		})
+
+		It("errors on an already-closed session", func() {
+			startedAt := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+			id, err := s.StartSession(ctx, startedAt, "surplus", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(s.EndSession(ctx, id, startedAt.Add(time.Hour), "full", nil, 500, 250, 300)).To(Succeed())
+
+			Expect(s.FlushSession(ctx, id, 500, 250, 300)).To(HaveOccurred())
+		})
+
+		It("flushed values are used by crash recovery (OpenSession reads them back)", func() {
+			startedAt := time.Date(2026, 6, 28, 13, 0, 0, 0, time.UTC)
+			id, err := s.StartSession(ctx, startedAt, "surplus", intPtr(30))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(s.FlushSession(ctx, id, 4500.0, 3000.0, 3600.0)).To(Succeed())
+
+			// Simulate what recoverDanglingSession does: read the open session and
+			// close it using the persisted values.
+			open, err := s.OpenSession(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(open).NotTo(BeNil())
+
+			endedAt := startedAt.Add(90 * time.Minute)
+			Expect(s.EndSession(ctx, open.ID, endedAt, "restart", nil,
+				open.EnergyWh, open.AvgChargeW, open.PeakChargeW)).To(Succeed())
+
+			sessions, err := s.RecentSessions(ctx, 1)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sessions[0].EnergyWh).To(Equal(4500.0))
+			Expect(sessions[0].AvgChargeW).To(Equal(3000.0))
+			Expect(sessions[0].PeakChargeW).To(Equal(3600.0))
+			Expect(sessions[0].StopReason).To(Equal("restart"))
+		})
+	})
+
 	Describe("RecentSessions", func() {
 		It("round-trips values, including nullable fields, newest first", func() {
 			t1 := time.Date(2026, 6, 28, 8, 0, 0, 0, time.UTC)

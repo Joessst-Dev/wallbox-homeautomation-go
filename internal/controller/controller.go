@@ -28,6 +28,7 @@ type Recorder interface {
 	InsertSample(ctx context.Context, sm store.Sample) error
 	StartSession(ctx context.Context, startedAt time.Time, startReason string, startVehicleSoC *int) (int64, error)
 	EndSession(ctx context.Context, id int64, endedAt time.Time, stopReason string, endVehicleSoC *int, energyWh, avgChargeW, peakChargeW float64) error
+	FlushSession(ctx context.Context, id int64, energyWh, avgChargeW, peakChargeW float64) error
 	OpenSession(ctx context.Context) (*store.Session, error)
 }
 
@@ -217,8 +218,24 @@ func (c *Controller) trackSession(ctx context.Context, now time.Time, in Inputs,
 		if in.ChargeW > c.sessionPeakW {
 			c.sessionPeakW = in.ChargeW
 		}
+		c.flushSession(ctx)
 	}
 	c.prevCharging = in.Charging
+}
+
+// flushSession persists the current in-memory accumulators to the DB so
+// crash recovery can restore non-zero energy totals.
+func (c *Controller) flushSession(ctx context.Context) {
+	if c.sessionID == 0 {
+		return
+	}
+	avg := 0.0
+	if c.sessionTicks > 0 {
+		avg = c.sessionSumW / float64(c.sessionTicks)
+	}
+	if err := c.rec.FlushSession(ctx, c.sessionID, c.sessionEnWh, avg, c.sessionPeakW); err != nil {
+		c.log.Warn("controller: FlushSession failed", "err", err)
+	}
 }
 
 func (c *Controller) closeSession(ctx context.Context, now time.Time, in Inputs, reason string) {

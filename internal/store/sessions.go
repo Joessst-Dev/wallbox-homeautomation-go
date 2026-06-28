@@ -64,6 +64,29 @@ func (s *Store) EndSession(ctx context.Context, id int64, endedAt time.Time, sto
 	return nil
 }
 
+// FlushSession persists the current running energy metrics into the open
+// session row so that crash recovery via recoverDanglingSession can restore
+// non-zero totals. The session remains open (ended_at stays NULL).
+func (s *Store) FlushSession(ctx context.Context, id int64, energyWh, avgChargeW, peakChargeW float64) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE charge_sessions
+		    SET energy_wh = ?, avg_charge_w = ?, peak_charge_w = ?
+		  WHERE id = ? AND ended_at IS NULL`,
+		energyWh, avgChargeW, peakChargeW, id,
+	)
+	if err != nil {
+		return fmt.Errorf("flush session %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("flush session %d: rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("flush session %d: %w", id, sql.ErrNoRows)
+	}
+	return nil
+}
+
 // OpenSession returns the currently open session (ended_at NULL), or (nil, nil)
 // if no session is open.
 func (s *Store) OpenSession(ctx context.Context) (*Session, error) {
