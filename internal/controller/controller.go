@@ -199,7 +199,7 @@ func (c *Controller) trackSession(ctx context.Context, now time.Time, in Inputs,
 	switch {
 	case in.Charging && !c.prevCharging:
 		c.sessionPeakW, c.sessionEnWh, c.sessionSumW, c.sessionTicks = 0, 0, 0, 0
-		id, err := c.rec.StartSession(ctx, now, startReasonFor(now, in), intPtrOrNil(in.VehicleSoC))
+		id, err := c.rec.StartSession(ctx, now, startReasonFor(now, in), socPtr(in.VehicleSoC, in.VehicleSoCKnown))
 		if err != nil {
 			c.log.Warn("controller: StartSession failed", "err", err)
 		} else {
@@ -229,7 +229,7 @@ func (c *Controller) closeSession(ctx context.Context, now time.Time, in Inputs,
 	if c.sessionTicks > 0 {
 		avg = c.sessionSumW / float64(c.sessionTicks)
 	}
-	if err := c.rec.EndSession(ctx, c.sessionID, now, reason, intPtrOrNil(in.VehicleSoC),
+	if err := c.rec.EndSession(ctx, c.sessionID, now, reason, socPtr(in.VehicleSoC, in.VehicleSoCKnown),
 		c.sessionEnWh, avg, c.sessionPeakW); err != nil {
 		c.log.Warn("controller: EndSession failed", "err", err)
 	}
@@ -346,8 +346,11 @@ func (c *Controller) Status() StatusView {
 	}
 }
 
-func intPtrOrNil(v int) *int {
-	if v == 0 {
+// socPtr returns nil when the vehicle SoC has never been received (known==false),
+// and a pointer to v otherwise. This preserves a genuine 0% reading rather than
+// conflating it with absent data.
+func socPtr(v int, known bool) *int {
+	if !known {
 		return nil
 	}
 	return &v

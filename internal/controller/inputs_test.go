@@ -45,6 +45,24 @@ var _ = Describe("InputsFromSnapshot", func() {
 		Expect(in.Stale).To(BeFalse())
 		Expect(in.Connected).To(BeTrue())
 		Expect(in.VehicleSoC).To(Equal(55))
+		Expect(in.VehicleSoCKnown).To(BeTrue())
+	})
+
+	It("sets VehicleSoCKnown=false when VehicleSoC has not been seen", func() {
+		s := fullSnap()
+		s.VehicleSoC.Seen = false
+		s.VehicleSoC.Value = 0
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		Expect(in.VehicleSoCKnown).To(BeFalse())
+		Expect(in.Ready).To(BeFalse(), "unseen VehicleSoC should prevent Ready")
+	})
+
+	It("sets VehicleSoCKnown=true and VehicleSoC=0 when a genuine 0% reading is received", func() {
+		s := fullSnap()
+		s.VehicleSoC = evcc.FloatMetric{Value: 0, At: now, Seen: true}
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		Expect(in.VehicleSoCKnown).To(BeTrue())
+		Expect(in.VehicleSoC).To(Equal(0))
 	})
 
 	It("treats a 3-hour-old vehicleSoc as valid (NOT stale)", func() {
