@@ -121,7 +121,7 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	c.mu.Lock()
 	c.state = dec.State
 	c.timers = dec.Timers
-	if expireOverride {
+	if expireOverride && c.override == ov && c.overrideUntil.Equal(ovUntil) {
 		c.override = OverrideAuto
 		c.overrideUntil = time.Time{}
 	}
