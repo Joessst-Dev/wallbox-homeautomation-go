@@ -65,6 +65,11 @@ type Controller struct {
 	sessionEnWh         float64
 	sessionSumW         float64
 	sessionTicks        int
+
+	// testHook is called in tick after the first mu.Unlock and before the second
+	// mu.Lock, allowing tests to inject a concurrent SetOverride precisely into
+	// the critical window. Must be nil in production.
+	testHook func()
 }
 
 // New builds a Controller.
@@ -113,6 +118,10 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	prevState, prevTimers := c.state, c.timers
 	c.mu.Unlock()
 
+	if c.testHook != nil {
+		c.testHook()
+	}
+
 	in := InputsFromSnapshot(now, snap, c.cfg, ov, ovUntil)
 	dec := Decide(now, in, prevState, prevTimers, c.cfg)
 	surplus := Surplus(in)
@@ -121,7 +130,10 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	c.mu.Lock()
 	c.state = dec.State
 	c.timers = dec.Timers
-	if expireOverride {
+	// Guard with CAS: only clear the override if it is still the same value we
+	// read at the start of this tick. A concurrent SetOverride between the two
+	// lock sections would have changed c.override, and we must not discard it.
+	if expireOverride && c.override == ov && c.overrideUntil.Equal(ovUntil) {
 		c.override = OverrideAuto
 		c.overrideUntil = time.Time{}
 	}
