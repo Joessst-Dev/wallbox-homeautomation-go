@@ -13,6 +13,7 @@ const (
 	defaultSessionsLimit = 20
 	defaultEventsLimit   = 50
 	defaultHistoryWindow = 24 * time.Hour
+	maxHistoryWindow     = 7 * 24 * time.Hour
 )
 
 // handleHealthz is a liveness probe: it always reports the process is up.
@@ -162,6 +163,9 @@ func (s *Server) handleAPIHistory(c *fiber.Ctx) error {
 	}
 	if to.Before(from) {
 		return fiber.NewError(fiber.StatusBadRequest, "to must not be before from")
+	}
+	if to.Sub(from) > maxHistoryWindow {
+		return fiber.NewError(fiber.StatusBadRequest, "history window exceeds 7-day maximum")
 	}
 
 	samples, err := s.st.Samples(c.Context(), from, to)

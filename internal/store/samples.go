@@ -23,6 +23,10 @@ type Sample struct {
 	State      string
 }
 
+// maxSampleRows caps the rows returned by Samples. At 15 s/sample this covers
+// 7 days, matching the handler's maxHistoryWindow.
+const maxSampleRows = 40320
+
 // InsertSample appends a time-series sample.
 func (s *Store) InsertSample(ctx context.Context, sm Sample) error {
 	_, err := s.db.ExecContext(ctx,
@@ -47,8 +51,9 @@ func (s *Store) Samples(ctx context.Context, from, to time.Time) ([]Sample, erro
 		        charge_w, vehicle_soc, charging, mode, surplus_w, state
 		   FROM samples
 		  WHERE ts >= ? AND ts <= ?
-		  ORDER BY ts ASC, id ASC`,
-		formatTime(from), formatTime(to),
+		  ORDER BY ts ASC, id ASC
+		  LIMIT ?`,
+		formatTime(from), formatTime(to), maxSampleRows,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("samples: %w", err)

@@ -268,4 +268,47 @@ var _ = Describe("Web Server", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 	})
+
+	Describe("GET /api/history", func() {
+		It("returns 200 with samples when no params are given (24h default window)", func() {
+			st.samples = []store.Sample{{State: "idle"}}
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/api/history", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			var out []map[string]any
+			Expect(json.Unmarshal([]byte(bodyString(resp)), &out)).To(Succeed())
+			Expect(out).To(HaveLen(1))
+		})
+
+		It("returns 200 for a window exactly at the 7-day limit", func() {
+			now := time.Now().UTC()
+			from := now.Add(-7 * 24 * time.Hour)
+			url := "/api/history?from=" + from.Format(time.RFC3339) + "&to=" + now.Format(time.RFC3339)
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, url, nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		})
+
+		It("returns 400 when the requested window exceeds 7 days", func() {
+			now := time.Now().UTC()
+			from := now.Add(-8 * 24 * time.Hour)
+			url := "/api/history?from=" + from.Format(time.RFC3339) + "&to=" + now.Format(time.RFC3339)
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, url, nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("7-day maximum"))
+		})
+
+		It("returns 400 for an invalid from timestamp", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/api/history?from=not-a-date", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+
+		It("returns 400 when to is before from", func() {
+			now := time.Now().UTC()
+			from := now
+			to := now.Add(-time.Hour)
+			url := "/api/history?from=" + from.Format(time.RFC3339) + "&to=" + to.Format(time.RFC3339)
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, url, nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+	})
 })
