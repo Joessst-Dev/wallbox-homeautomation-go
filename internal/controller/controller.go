@@ -59,6 +59,7 @@ type Controller struct {
 	limitSoCSet         bool // limitSoc backstop confirmed published at least once
 	lastLimitPublishAt  time.Time
 	prevBrokerConnected bool
+	prevEvccOnline      bool // tracks Online.Value so we can detect false→true restarts
 	prevCharging        bool
 	sessionID           int64
 	sessionPeakW        float64
@@ -136,6 +137,12 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	reconnected := snap.BrokerConnected && !c.prevBrokerConnected
 	c.prevBrokerConnected = snap.BrokerConnected
 
+	// Detect evcc coming online via the LWT topic (false→true or unseen→true).
+	// When evcc restarts while the broker stays up, the broker connection never
+	// drops so reconnected stays false; the Online edge is the only signal.
+	evccCameOnline := snap.Online.Seen && snap.Online.Value && !c.prevEvccOnline
+	c.prevEvccOnline = snap.Online.Seen && snap.Online.Value
+
 	if dec.State != prevState {
 		c.recordEvent(ctx, store.Event{
 			TS: now, Type: "state_change",
@@ -147,8 +154,8 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 			"surplus", surplus, "vehicleSoc", in.VehicleSoC)
 	}
 
-	c.publishMode(ctx, now, dec, in, surplus, reconnected)
-	c.publishLimitSoCBackstop(now, snap.BrokerConnected, reconnected)
+	c.publishMode(ctx, now, dec, in, surplus, reconnected || evccCameOnline)
+	c.publishLimitSoCBackstop(now, snap.BrokerConnected, reconnected || evccCameOnline)
 	c.trackSession(ctx, now, in, dec.State)
 	c.recordSample(ctx, now, in, surplus, dec)
 }
