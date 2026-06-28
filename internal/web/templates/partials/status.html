@@ -1,0 +1,214 @@
+<div class="space-y-4 sm:space-y-5">
+
+  {{- /* Warning banner: stale data or a lost upstream connection. */ -}}
+  {{if or .Stale (not .BrokerConnected) (not .Online)}}
+  <div role="alert"
+       class="flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm
+              {{if .Stale}}border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200
+              {{else}}border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200{{end}}">
+    <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 9v4m0 4h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0Z" />
+    </svg>
+    <div>
+      <p class="font-semibold">
+        {{if .Stale}}Live data is stale{{else if not .BrokerConnected}}MQTT broker disconnected{{else}}evcc is offline{{end}}
+      </p>
+      <p class="text-[0.8125rem] opacity-90">
+        {{if .Stale}}Showing the last known values{{if .HasUpdated}} from {{.UpdatedAgo}}{{end}}.{{else}}Readings may be out of date until the connection is restored.{{end}}
+      </p>
+    </div>
+  </div>
+  {{end}}
+
+  {{- /* Hero: charging vs idle made obvious through colour + icon. */ -}}
+  <section class="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-900
+                  {{if .Charging}}border-emerald-300 dark:border-emerald-500/40{{else}}border-slate-200 dark:border-slate-800{{end}}">
+    <div class="h-1.5 w-full {{if .Charging}}bg-emerald-500{{else}}bg-slate-300 dark:bg-slate-700{{end}}"></div>
+    <div class="p-4 sm:p-5">
+      <div class="flex items-start gap-4">
+        <span class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl
+                     {{if .Charging}}bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400{{else}}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400{{end}}">
+          {{if .Charging}}
+          <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+          </svg>
+          {{else}}
+          <svg class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7v5l3 2" />
+          </svg>
+          {{end}}
+        </span>
+
+        <div class="min-w-0 flex-1">
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Controller</p>
+          <p class="text-2xl font-bold capitalize leading-tight {{if .Charging}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-800 dark:text-slate-100{{end}}">
+            {{.State}}
+          </p>
+          <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{.Reason}}</p>
+        </div>
+      </div>
+
+      <dl class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-100 pt-3 text-sm dark:border-slate-800">
+        <div class="flex items-center gap-2">
+          <dt class="text-slate-500 dark:text-slate-400">Desired mode</dt>
+          <dd class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold capitalize text-slate-700 dark:bg-slate-800 dark:text-slate-200">{{.DesiredMode}}</dd>
+        </div>
+        <div class="ml-auto flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
+          <span class="relative flex h-2 w-2">
+            {{if not .Stale}}<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>{{end}}
+            <span class="relative inline-flex h-2 w-2 rounded-full {{if .Stale}}bg-amber-400{{else}}bg-emerald-500{{end}}"></span>
+          </span>
+          {{if .HasUpdated}}<time datetime="{{.UpdatedAt}}">Updated {{.UpdatedAgo}}</time>{{else}}Awaiting first update{{end}}
+        </div>
+      </dl>
+    </div>
+  </section>
+
+  <div class="grid gap-4 sm:grid-cols-2 sm:gap-5">
+
+    {{- /* Power flow: the surplus is the headline number. */ -}}
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Power flow</h2>
+
+      <div class="mt-3 rounded-xl px-4 py-3 {{if gt .SurplusW 0}}bg-emerald-50 dark:bg-emerald-500/10{{else}}bg-slate-50 dark:bg-slate-800/60{{end}}">
+        <p class="text-xs font-medium text-slate-500 dark:text-slate-400">Surplus</p>
+        <p class="mt-0.5 text-3xl font-bold tabular-nums {{if gt .SurplusW 0}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-700 dark:text-slate-200{{end}}">
+          {{.SurplusW}}<span class="ml-1 text-lg font-semibold text-slate-400 dark:text-slate-500">W</span>
+        </p>
+        <p class="text-xs tabular-nums text-slate-400 dark:text-slate-500">{{.SurplusKW}} kW available</p>
+      </div>
+
+      <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+        <div>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">PV</dt>
+          <dd class="font-semibold tabular-nums">{{.PVKW}} <span class="text-xs font-normal text-slate-400">kW</span></dd>
+        </div>
+        <div>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">Home</dt>
+          <dd class="font-semibold tabular-nums">{{.HomeKW}} <span class="text-xs font-normal text-slate-400">kW</span></dd>
+        </div>
+        <div>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">Grid</dt>
+          <dd class="font-semibold tabular-nums">{{.GridW}} <span class="text-xs font-normal text-slate-400">W</span></dd>
+        </div>
+        <div>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">Charge</dt>
+          <dd class="font-semibold tabular-nums">{{.ChargeW}} <span class="text-xs font-normal text-slate-400">W</span></dd>
+        </div>
+        <div class="col-span-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+          <div class="flex items-center justify-between">
+            <dt class="text-xs text-slate-500 dark:text-slate-400">Home battery</dt>
+            <dd class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">{{.BatteryW}} W &middot; {{.BatterySoC}}%</dd>
+          </div>
+          <div class="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" role="progressbar" aria-valuenow="{{.BatterySoC}}" aria-valuemin="0" aria-valuemax="100" aria-label="Home battery state of charge">
+            <div class="h-full rounded-full bg-sky-500 transition-[width] duration-500" style="width: {{.BatterySoC}}%"></div>
+          </div>
+        </div>
+      </dl>
+    </section>
+
+    {{- /* Vehicle: SoC progress toward the 80% surplus cap. */ -}}
+    <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Vehicle</h2>
+
+      <div class="mt-3 flex items-baseline gap-2">
+        <p class="text-3xl font-bold tabular-nums">{{.VehicleSoC}}<span class="ml-0.5 text-lg font-semibold text-slate-400">%</span></p>
+        <p class="text-xs text-slate-400 dark:text-slate-500">Vehicle SoC</p>
+      </div>
+
+      <div class="relative mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" role="progressbar" aria-valuenow="{{.VehicleSoC}}" aria-valuemin="0" aria-valuemax="100" aria-label="Vehicle state of charge">
+        <div class="h-full rounded-full transition-[width] duration-500 {{if .Charging}}bg-emerald-500{{else}}bg-slate-400 dark:bg-slate-500{{end}}" style="width: {{.VehicleSoC}}%"></div>
+      </div>
+      <div class="relative mt-1 h-4 text-[0.6875rem] text-slate-400 dark:text-slate-500">
+        <span class="absolute left-0">0%</span>
+        <span class="absolute left-[80%] -translate-x-1/2 font-medium text-slate-500 dark:text-slate-400">80% cap</span>
+      </div>
+
+      <div class="mt-4 flex flex-wrap gap-2">
+        <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {{if .Connected}}bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300{{else}}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400{{end}}">
+          <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0V7Zm5 9v5"/></svg>
+          {{if .Connected}}Connected{{else}}Unplugged{{end}}
+        </span>
+        <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {{if .Charging}}bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300{{else}}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400{{end}}">
+          {{if .Charging}}Charging{{else}}Idle{{end}}
+        </span>
+        {{if .Ready}}
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-300">Ready</span>
+        {{end}}
+      </div>
+    </section>
+  </div>
+
+  {{- /* Health: connection indicators. */ -}}
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Health</h2>
+    <dl class="mt-3 grid grid-cols-2 gap-3">
+      <div class="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
+        <span class="h-2.5 w-2.5 shrink-0 rounded-full {{if .BrokerConnected}}bg-emerald-500{{else}}bg-rose-500{{end}}" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <dt class="text-sm font-medium">MQTT broker</dt>
+          <dd class="text-xs {{if .BrokerConnected}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .BrokerConnected}}Connected{{else}}Disconnected{{end}}</dd>
+        </div>
+      </div>
+      <div class="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
+        <span class="h-2.5 w-2.5 shrink-0 rounded-full {{if .Online}}bg-emerald-500{{else}}bg-rose-500{{end}}" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <dt class="text-sm font-medium">evcc</dt>
+          <dd class="text-xs {{if .Online}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .Online}}Online{{else}}Offline{{end}}</dd>
+        </div>
+      </div>
+    </dl>
+  </section>
+
+  {{- /* Override controls: post to /api/override, refresh this whole block. */ -}}
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+    <div class="mb-3 flex items-center justify-between">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Override</h2>
+      {{if .OverrideActive}}
+      <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+        Manual{{if .OverrideUntil}} &middot; until <time datetime="{{.OverrideUntil}}">{{.OverrideUntil}}</time>{{end}}
+      </span>
+      {{end}}
+    </div>
+
+    <form hx-post="/api/override"
+          hx-target="#status"
+          hx-swap="innerHTML"
+          class="space-y-3">
+      <div class="grid grid-cols-3 gap-2">
+        <button type="submit" name="mode" value="auto"
+                aria-pressed="{{if eq .Override "auto"}}true{{else}}false{{end}}"
+                class="flex min-h-[44px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500
+                       {{if eq .Override "auto"}}border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-500 dark:border-emerald-500 dark:bg-emerald-500/15 dark:text-emerald-300{{else}}border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700{{end}}">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/></svg>
+          Auto
+        </button>
+        <button type="submit" name="mode" value="on"
+                aria-pressed="{{if eq .Override "on"}}true{{else}}false{{end}}"
+                class="flex min-h-[44px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500
+                       {{if eq .Override "on"}}border-emerald-600 bg-emerald-600 text-white ring-1 ring-emerald-600 dark:border-emerald-500 dark:bg-emerald-500{{else}}border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/40 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20{{end}}">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
+          Charge now
+        </button>
+        <button type="submit" name="mode" value="off"
+                aria-pressed="{{if eq .Override "off"}}true{{else}}false{{end}}"
+                class="flex min-h-[44px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500
+                       {{if eq .Override "off"}}border-rose-600 bg-rose-600 text-white ring-1 ring-rose-600 dark:border-rose-500 dark:bg-rose-500{{else}}border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-300 dark:hover:bg-rose-500/20{{end}}">
+          <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          Stop
+        </button>
+      </div>
+
+      <label class="flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-slate-400">
+        <span>Auto-revert after</span>
+        <span class="flex items-center gap-1.5">
+          <input type="number" name="hours" min="0" max="24" step="1" inputmode="numeric" placeholder="0"
+                 class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+          <span>hours</span>
+        </span>
+      </label>
+      <p class="text-xs text-slate-400 dark:text-slate-500">Leave hours empty for a permanent override until changed.</p>
+    </form>
+  </section>
+</div>

@@ -1,0 +1,45 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: standard # errcheck, govet, ineffassign, staticcheck, unused
+  enable:
+    - bodyclose # HTTP/response bodies must be closed
+    - errorlint # correct error wrapping / errors.Is comparisons
+    - gocritic # broad, high-signal diagnostics
+    - misspell # typos in comments/strings
+    - nilerr # returning nil after a non-nil error
+    - unconvert # redundant type conversions
+    - unparam # unused function params/returns
+
+  settings:
+    gocritic:
+      disabled-checks:
+        - ifElseChain # noisy; harmless style
+    misspell:
+      locale: US
+      ignore-rules:
+        - Mosquitto # product name (Eclipse Mosquitto), not a misspelling of "mosquito"
+
+  exclusions:
+    generated: lax
+    rules:
+      # Ginkgo/Gomega use dot-imports by design.
+      - path: _test.go
+        text: "should not use dot imports"
+      # Relax strict error checking inside BDD specs.
+      - path: _test.go
+        linters:
+          - errcheck
+          - unparam
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Joessst-Dev/wallbox-homeautomation-go

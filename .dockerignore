@@ -1,0 +1,17 @@
+.git
+.gitignore
+.claude
+*.md
+plans/
+data/
+*.db
+*.db-wal
+*.db-shm
+config.local.yaml
+evcc.yaml
+# Tailwind standalone binary (large, host-arch only); app.css is committed/embedded
+web/tailwind/tailwindcss
+internal/web/tailwind/tailwindcss
+Dockerfile
+.dockerignore
+docker-compose.yml

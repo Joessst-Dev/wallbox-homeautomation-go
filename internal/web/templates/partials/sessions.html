@@ -1,0 +1,49 @@
+{{if .}}
+<ul class="divide-y divide-slate-100 dark:divide-slate-800">
+  {{range .}}
+  <li class="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg {{if .Open}}bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400{{else}}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400{{end}}" aria-hidden="true">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
+    </span>
+
+    <div class="min-w-0 flex-1">
+      <div class="flex items-center gap-2">
+        <p class="truncate text-sm font-medium capitalize">{{.StartReason}}</p>
+        {{if .Open}}
+        <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[0.625rem] font-semibold uppercase tracking-wide text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>Open
+        </span>
+        {{else if .StopReason}}
+        <span class="truncate text-xs capitalize text-slate-400 dark:text-slate-500">&rarr; {{.StopReason}}</span>
+        {{end}}
+      </div>
+      <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-400 dark:text-slate-500">
+        <time datetime="{{.StartedAt}}" class="tabular-nums">{{.StartedAt}}</time>
+        {{if and .StartVehicleSoC .EndVehicleSoC}}
+        <span aria-hidden="true">&middot;</span>
+        <span class="tabular-nums">{{.StartVehicleSoC}}&rarr;{{.EndVehicleSoC}}%</span>
+        {{else if .StartVehicleSoC}}
+        <span aria-hidden="true">&middot;</span>
+        <span class="tabular-nums">from {{.StartVehicleSoC}}%</span>
+        {{end}}
+        {{if gt .AvgChargeW 0}}
+        <span aria-hidden="true">&middot;</span>
+        <span class="tabular-nums">avg {{.AvgChargeW}} W</span>
+        {{end}}
+      </p>
+    </div>
+
+    <div class="shrink-0 text-right">
+      <p class="text-sm font-semibold tabular-nums">{{.EnergyKWh}} <span class="text-xs font-normal text-slate-400">kWh</span></p>
+      {{if gt .PeakChargeW 0}}<p class="text-[0.6875rem] tabular-nums text-slate-400 dark:text-slate-500">peak {{.PeakChargeW}} W</p>{{end}}
+    </div>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<div class="flex flex-col items-center justify-center gap-2 py-8 text-center">
+  <svg class="h-8 w-8 text-slate-300 dark:text-slate-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"/></svg>
+  <p class="text-sm text-slate-500 dark:text-slate-400">No sessions recorded yet.</p>
+  <p class="text-xs text-slate-400 dark:text-slate-500">Charge sessions will appear here once the car starts charging.</p>
+</div>
+{{end}}

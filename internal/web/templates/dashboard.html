@@ -1,0 +1,38 @@
+<section class="space-y-4 sm:space-y-5">
+  <!--
+    Live status: hero, power flow, vehicle, health and the override controls.
+    Polled by htmx every 5s; the whole block is re-rendered so every live value
+    (including the active-override highlight) stays in sync. The override form
+    lives inside the partial and targets this same #status container.
+  -->
+  <div id="status"
+       hx-get="/partials/status"
+       hx-trigger="every 5s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/status" .Status}}
+  </div>
+
+  <!-- Recent sessions -->
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+    <div class="mb-3 flex items-center justify-between">
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Recent sessions</h2>
+      <button type="button"
+              class="rounded-lg px-2 py-1 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              hx-get="/partials/sessions"
+              hx-target="#sessions"
+              hx-swap="innerHTML"
+              aria-label="Refresh sessions">
+        Refresh
+      </button>
+    </div>
+    <div id="sessions"
+         hx-get="/partials/sessions"
+         hx-trigger="load"
+         hx-swap="innerHTML"
+         aria-busy="true"
+         aria-live="polite">
+      {{template "partials/sessions" .Sessions}}
+    </div>
+  </section>
+</section>

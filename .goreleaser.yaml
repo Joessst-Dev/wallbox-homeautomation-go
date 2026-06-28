@@ -1,0 +1,96 @@
+version: 2
+project_name: wha
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: wha
+    main: ./cmd/wha
+    binary: wha
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - '^ci:'
+
+# Build per-arch images by COPYing the already-built binaries (no go build, no QEMU).
+dockers:
+  - id: amd64
+    goos: linux
+    goarch: amd64
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    image_templates:
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-amd64"
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.source=https://github.com/Joessst-Dev/wallbox-homeautomation-go"
+  - id: arm64
+    goos: linux
+    goarch: arm64
+    dockerfile: Dockerfile.goreleaser
+    use: buildx
+    image_templates:
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-arm64"
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.revision={{ .FullCommit }}"
+      - "--label=org.opencontainers.image.source=https://github.com/Joessst-Dev/wallbox-homeautomation-go"
+
+# Stitch the per-arch images into multi-arch manifests with the user-facing tags.
+docker_manifests:
+  - name_template: "ghcr.io/joessst-dev/wha:{{ .Version }}" # 1.2.3
+    image_templates:
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-amd64"
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/joessst-dev/wha:{{ .Major }}.{{ .Minor }}" # 1.2
+    image_templates:
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-amd64"
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/joessst-dev/wha:latest"
+    image_templates:
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-amd64"
+      - "ghcr.io/joessst-dev/wha:{{ .Version }}-arm64"

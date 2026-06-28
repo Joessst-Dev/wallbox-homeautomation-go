@@ -1,0 +1,38 @@
+# wha sample configuration. Copy to /etc/wha/config.yaml (or pass --config) and
+# adjust. Every key can also be overridden by a WHA_* env var (e.g. WHA_MQTT_BROKER)
+# or a CLI flag. Durations accept Go syntax: "60s", "2m", "6h".
+
+mqtt:
+  broker: tcp://mosquitto:1883 # WHA_MQTT_BROKER
+  clientID: wha
+  username: "" # set if your broker requires auth (recommended — see below)
+  password: ""
+  topicPrefix: evcc
+
+evcc:
+  loadpointID: "1" # which evcc loadpoint to control (1-based)
+
+control:
+  enableMode: pv # pv = charge only on surplus (evcc modulates current); now = full power
+  startThresholdW: 1400 # surplus must reach this to start (~min charge power, 1-phase Twingo)
+  stopThresholdW: 0 # surplus must drop below this to stop
+  startDwell: 2m # surplus must be sustained this long before starting (anti-flap)
+  stopDwell: 3m # low surplus sustained this long before stopping (matches evcc disableDelay)
+  socCap: 80 # stop charging at this vehicle SoC
+  socResumeBelow: 78 # only allow resuming once SoC drops below this (latch)
+  decisionInterval: 15s # how often the control loop evaluates
+  staleTimeout: 60s # power metrics older than this trigger fail-safe (charging off)
+  republish: 5m # re-send mode + limitSoc backstop periodically (set-topics are not retained)
+
+web:
+  bindAddr: 0.0.0.0
+  port: 8080
+
+db:
+  path: /data/wha.db
+
+log:
+  level: info # debug | info | warn | error
+# SECURITY: MQTT is the ONLY thing protecting charge control — evcc does not
+# authenticate set-topics. Lock down Mosquitto with credentials + ACLs that
+# restrict wha to evcc/loadpoints/<id>/.../set, and never expose the broker.

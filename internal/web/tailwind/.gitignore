@@ -1,0 +1,3 @@
+# Tailwind standalone CLI binary (downloaded on demand, ~48MB).
+# The compiled output lives at ../static/app.css and IS committed/embedded.
+tailwindcss

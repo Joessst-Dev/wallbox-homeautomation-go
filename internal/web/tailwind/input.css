@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Project base layer: small ergonomic defaults for the appliance UI. */
+@layer base {
+  /* Smooth the htmx swap so the 5s status poll doesn't visually flicker. */
+  .htmx-swapping {
+    opacity: 0.6;
+  }
+}

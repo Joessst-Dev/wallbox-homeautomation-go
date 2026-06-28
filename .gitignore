@@ -1,0 +1,36 @@
+# Binaries
+/wha
+/bin/
+*.exe
+
+# Local data / SQLite
+*.db
+*.db-wal
+*.db-shm
+/data/
+
+# Local config overrides
+config.local.yaml
+evcc.yaml
+
+# Tailwind tooling (the standalone CLI binary is large + host-arch only;
+# the compiled internal/web/static/app.css IS committed and embedded)
+internal/web/tailwind/tailwindcss
+node_modules/
+
+# Claude Code (local agent tooling, not part of the project)
+.claude/
+CLAUDE.md
+
+# OS / editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Test output
+coverage.out
+*.test
+
+# GoReleaser output
+/dist/

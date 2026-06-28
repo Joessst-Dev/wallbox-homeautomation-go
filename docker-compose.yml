@@ -1,0 +1,55 @@
+# Home stack for the Raspberry Pi: Mosquitto (MQTT broker) + evcc (hardware
+# drivers) + wha (this controller). evcc publishes state to Mosquitto; wha reads
+# it, decides, and publishes commands back.
+#
+# First run:
+#   cp evcc.example.yaml evcc.yaml     # then fill in your Sungrow IP / Easee / Renault creds
+#   # (optional) edit config.yaml to tune thresholds
+#   docker compose up -d
+# UIs: evcc http://<pi>:7070   wha http://<pi>:8080
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto-data:/mosquitto/data
+    ports:
+      - "1883:1883"
+
+  evcc:
+    image: evcc/evcc:latest
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    command: ["evcc", "--config", "/etc/evcc.yaml"]
+    volumes:
+      - ./evcc.yaml:/etc/evcc.yaml:ro
+      - evcc-data:/root/.evcc
+    ports:
+      - "7070:7070"
+    # The Sungrow SH8.0 RT is reached over Modbus TCP (network), so the default
+    # bridge network is fine. If you ever use a USB/serial device, add it here:
+    #   devices:
+    #     - /dev/ttyUSB0:/dev/ttyUSB0
+
+  wha:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+      - evcc
+    environment:
+      - WHA_MQTT_BROKER=tcp://mosquitto:1883
+      - WHA_DB_PATH=/data/wha.db
+    volumes:
+      - ./config.yaml:/etc/wha/config.yaml:ro
+      - wha-data:/data
+    ports:
+      - "8080:8080"
+
+volumes:
+  mosquitto-data: {}
+  evcc-data: {}
+  wha-data: {}

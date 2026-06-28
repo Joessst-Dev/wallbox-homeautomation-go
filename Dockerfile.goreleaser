@@ -1,0 +1,7 @@
+# GoReleaser places the matching prebuilt binary in the build context as ./wha.
+# No build step here, so cross-arch images assemble without QEMU.
+FROM gcr.io/distroless/static-debian12:nonroot
+COPY wha /wha
+VOLUME ["/data"]
+EXPOSE 8080
+ENTRYPOINT ["/wha"]

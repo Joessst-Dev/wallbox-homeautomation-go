@@ -1,0 +1,96 @@
+# evcc config for the wha stack: Sungrow SH8.0 RT + Easee Home + Renault Twingo.
+# Copy to evcc.yaml and fill in CHANGE_ME values, then: docker compose up -d
+# Validate standalone with: evcc -c evcc.yaml checkconfig
+#
+# Two things here are wha-specific:
+#   1. the `mqtt:` block — so evcc publishes state to Mosquitto for wha to read.
+#   2. permissive loadpoint enable/disable thresholds — wha owns the surplus
+#      decision (its own threshold + dwell), so evcc should not add a second
+#      layer of hysteresis. Keep its disable delay (~3m) for contactor safety.
+
+# Publish/subscribe to the shared broker. wha connects to the same broker.
+mqtt:
+  broker: mosquitto:1883
+  topic: evcc
+  # username: wha            # set if you enable broker auth (recommended)
+  # password: CHANGE_ME
+
+site:
+  title: Home
+  meters:
+    grid: sungrow_grid
+    pv:
+      - sungrow_pv
+    battery:
+      - sungrow_battery
+
+loadpoints:
+  - title: Garage
+    charger: easee_home
+    vehicle: twingo
+    phases: 3 # Easee Home is 3-phase; set to 1 if wired single-phase
+    mode: pv # wha will drive this between pv and off
+    # Let wha own the surplus gate — keep evcc's own thresholds permissive:
+    enable:
+      delay: 1m
+      threshold: 0 # start as soon as any surplus exists (wha already gated it)
+    disable:
+      delay: 3m
+      threshold: 0 # protects the contactor from rapid cycling
+
+# Sungrow SH8.0 RT hybrid via Modbus TCP (WiNet-S dongle, recent firmware).
+# One device, three logical meters differing only by usage.
+meters:
+  - name: sungrow_grid
+    type: template
+    template: sungrow-hybrid
+    usage: grid
+    modbus: tcpip
+    id: 1
+    host: CHANGE_ME # inverter / WiNet-S IP address
+    port: 502
+  - name: sungrow_pv
+    type: template
+    template: sungrow-hybrid
+    usage: pv
+    modbus: tcpip
+    id: 1
+    host: CHANGE_ME
+    port: 502
+  - name: sungrow_battery
+    type: template
+    template: sungrow-hybrid
+    usage: battery
+    modbus: tcpip
+    id: 1
+    host: CHANGE_ME
+    port: 502
+
+chargers:
+  - name: easee_home
+    type: template
+    template: easee
+    user: CHANGE_ME # Easee account email
+    password: CHANGE_ME # Easee account password
+    charger: CHANGE_ME # charger serial, e.g. EH000000
+
+vehicles:
+  - name: twingo
+    type: template
+    template: renault
+    title: Renault Twingo Electric
+    capacity: 22 # kWh usable — adjust if needed
+    user: CHANGE_ME # MY Renault account email
+    password: CHANGE_ME # MY Renault account password
+    vin: CHANGE_ME # optional but recommended (starts with VF...)
+    minCurrent: 8 # A — Twingo Electric minimum at 3 phases
+    maxCurrent: 16 # A — adjust to your installation
+
+tariffs:
+  currency: EUR
+  grid:
+    type: fixed
+    price: 0.29
+  feedin:
+    type: fixed
+    price: 0.10

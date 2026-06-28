@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#0f172a">
+  <title>{{.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+</head>
+<body class="min-h-full bg-slate-100 text-slate-900 antialiased selection:bg-emerald-200 selection:text-emerald-900 dark:bg-slate-950 dark:text-slate-100">
+  <div class="mx-auto w-full max-w-screen-md px-4 py-5 sm:px-6 sm:py-8">
+    <header class="mb-5 flex items-center gap-3 sm:mb-7">
+      <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm shadow-emerald-500/30">
+        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+        </svg>
+      </span>
+      <div class="min-w-0">
+        <h1 class="truncate text-lg font-semibold tracking-tight sm:text-xl">Wallbox Home Automation</h1>
+        <p class="text-sm text-slate-500 dark:text-slate-400">PV-surplus EV charging</p>
+      </div>
+    </header>
+
+    <main>
+      {{embed}}
+    </main>
+
+    <footer class="mt-8 text-center text-xs text-slate-400 dark:text-slate-600">
+      wha &middot; running on the Pi
+    </footer>
+  </div>
+</body>
+</html>
