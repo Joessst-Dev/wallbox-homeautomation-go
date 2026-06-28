@@ -60,6 +60,45 @@ var _ = Describe("Charge sessions", func() {
 		})
 	})
 
+	Describe("UpdateSessionMetrics", func() {
+		It("flushes energy accumulators into the open session row", func() {
+			startedAt := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
+			id, err := s.StartSession(ctx, startedAt, "surplus", nil)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Immediately after StartSession the stored values are zero.
+			open, err := s.OpenSession(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(open.EnergyWh).To(Equal(0.0))
+			Expect(open.AvgChargeW).To(Equal(0.0))
+			Expect(open.PeakChargeW).To(Equal(0.0))
+
+			// Flush mid-session accumulators.
+			Expect(s.UpdateSessionMetrics(ctx, id, 1234.5, 3000.0, 7200.0)).To(Succeed())
+
+			open, err = s.OpenSession(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(open.EnergyWh).To(Equal(1234.5))
+			Expect(open.AvgChargeW).To(Equal(3000.0))
+			Expect(open.PeakChargeW).To(Equal(7200.0))
+		})
+
+		It("errors when the session id does not exist", func() {
+			err := s.UpdateSessionMetrics(ctx, 999, 100, 200, 300)
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("errors when the session is already closed", func() {
+			startedAt := time.Date(2026, 6, 28, 10, 0, 0, 0, time.UTC)
+			id, err := s.StartSession(ctx, startedAt, "surplus", nil)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(s.EndSession(ctx, id, startedAt.Add(time.Hour), "full", nil, 500, 250, 600)).To(Succeed())
+
+			err = s.UpdateSessionMetrics(ctx, id, 100, 200, 300)
+			Expect(err).To(HaveOccurred())
+		})
+	})
+
 	Describe("RecentSessions", func() {
 		It("round-trips values, including nullable fields, newest first", func() {
 			t1 := time.Date(2026, 6, 28, 8, 0, 0, 0, time.UTC)

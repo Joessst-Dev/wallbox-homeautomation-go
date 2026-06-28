@@ -85,6 +85,28 @@ func (s *Store) OpenSession(ctx context.Context) (*Session, error) {
 	return sess, nil
 }
 
+// UpdateSessionMetrics flushes the in-progress energy accumulators into the
+// open session row so crash recovery can read back non-zero values.
+func (s *Store) UpdateSessionMetrics(ctx context.Context, id int64, energyWh, avgChargeW, peakChargeW float64) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE charge_sessions
+		    SET energy_wh = ?, avg_charge_w = ?, peak_charge_w = ?
+		  WHERE id = ? AND ended_at IS NULL`,
+		energyWh, avgChargeW, peakChargeW, id,
+	)
+	if err != nil {
+		return fmt.Errorf("update session metrics %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("update session metrics %d: rows affected: %w", id, err)
+	}
+	if n == 0 {
+		return fmt.Errorf("update session metrics %d: %w", id, sql.ErrNoRows)
+	}
+	return nil
+}
+
 // RecentSessions returns up to limit sessions, newest first.
 func (s *Store) RecentSessions(ctx context.Context, limit int) ([]Session, error) {
 	rows, err := s.db.QueryContext(ctx,
