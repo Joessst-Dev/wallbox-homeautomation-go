@@ -133,6 +133,15 @@ type Web struct {
 // DB holds persistence settings.
 type DB struct {
 	Path string `mapstructure:"path"`
+
+	// SampleRetention is how long time-series samples are kept before they are
+	// pruned. Zero disables sample pruning.
+	SampleRetention time.Duration `mapstructure:"sampleRetention"`
+	// EventRetention is how long audit events are kept. Zero disables event
+	// pruning.
+	EventRetention time.Duration `mapstructure:"eventRetention"`
+	// PruneInterval controls how often the background pruner runs.
+	PruneInterval time.Duration `mapstructure:"pruneInterval"`
 }
 
 // Log holds logging settings.
@@ -175,7 +184,10 @@ func Default() Config {
 			Port:     8080,
 		},
 		DB: DB{
-			Path: "/data/wha.db",
+			Path:            "/data/wha.db",
+			SampleRetention: 30 * 24 * time.Hour,
+			EventRetention:  90 * 24 * time.Hour,
+			PruneInterval:   time.Hour,
 		},
 		Log: Log{
 			Level: "info",
@@ -226,6 +238,15 @@ func (c Config) Validate() error {
 	}
 	if c.DB.Path == "" {
 		return fmt.Errorf("db.path must not be empty")
+	}
+	if c.DB.SampleRetention < 0 {
+		return fmt.Errorf("db.sampleRetention must not be negative")
+	}
+	if c.DB.EventRetention < 0 {
+		return fmt.Errorf("db.eventRetention must not be negative")
+	}
+	if c.DB.PruneInterval <= 0 {
+		return fmt.Errorf("db.pruneInterval must be positive")
 	}
 	return nil
 }

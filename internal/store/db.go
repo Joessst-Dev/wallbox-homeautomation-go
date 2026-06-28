@@ -9,6 +9,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -93,6 +94,16 @@ func Open(path string) (*Store, error) {
 func (s *Store) Close() error {
 	if err := s.db.Close(); err != nil {
 		return fmt.Errorf("close store: %w", err)
+	}
+	return nil
+}
+
+// Checkpoint runs a WAL truncating checkpoint, releasing freed pages back to
+// the OS. Call this after a prune pass to reclaim disk space.
+func (s *Store) Checkpoint(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`)
+	if err != nil {
+		return fmt.Errorf("wal checkpoint: %w", err)
 	}
 	return nil
 }

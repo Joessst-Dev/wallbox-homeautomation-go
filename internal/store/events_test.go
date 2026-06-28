@@ -85,3 +85,47 @@ var _ = Describe("Events audit log", func() {
 		Expect(got).To(BeEmpty())
 	})
 })
+
+var _ = Describe("PruneEvents", func() {
+	var (
+		s   *store.Store
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		s = newTempStore()
+		ctx = context.Background()
+	})
+
+	It("deletes events strictly older than `before` and returns the count", func() {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, d := range []time.Duration{0, time.Hour, 2 * time.Hour} {
+			Expect(s.InsertEvent(ctx, store.Event{TS: base.Add(d), Type: "command"})).To(Succeed())
+		}
+
+		cutoff := base.Add(2 * time.Hour)
+		n, err := s.PruneEvents(ctx, cutoff)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeNumerically("==", 2))
+
+		remaining, err := s.RecentEvents(ctx, 10)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(remaining).To(HaveLen(1))
+		Expect(remaining[0].TS).To(Equal(base.Add(2 * time.Hour)))
+	})
+
+	It("returns 0 and no error when no rows qualify", func() {
+		ts := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+		Expect(s.InsertEvent(ctx, store.Event{TS: ts, Type: "command"})).To(Succeed())
+
+		n, err := s.PruneEvents(ctx, ts.Add(-time.Minute))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeNumerically("==", 0))
+	})
+
+	It("returns 0 and no error on an empty table", func() {
+		n, err := s.PruneEvents(ctx, time.Now())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeNumerically("==", 0))
+	})
+})

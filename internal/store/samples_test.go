@@ -101,3 +101,64 @@ var _ = Describe("Samples time-series", func() {
 		Expect(got).To(BeEmpty())
 	})
 })
+
+var _ = Describe("PruneSamples", func() {
+	var (
+		s   *store.Store
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		s = newTempStore()
+		ctx = context.Background()
+	})
+
+	It("deletes samples strictly older than `before` and returns the count", func() {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		// Three samples: two old, one at the cutoff boundary.
+		Expect(s.InsertSample(ctx, store.Sample{TS: base})).To(Succeed())
+		Expect(s.InsertSample(ctx, store.Sample{TS: base.Add(time.Hour)})).To(Succeed())
+		Expect(s.InsertSample(ctx, store.Sample{TS: base.Add(2 * time.Hour)})).To(Succeed())
+
+		cutoff := base.Add(2 * time.Hour) // strictly before cutoff → first two deleted
+		n, err := s.PruneSamples(ctx, cutoff)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeNumerically("==", 2))
+
+		// Only the sample at exactly `cutoff` should remain.
+		remaining, err := s.Samples(ctx, base, base.Add(3*time.Hour))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(remaining).To(HaveLen(1))
+		Expect(remaining[0].TS).To(Equal(base.Add(2 * time.Hour)))
+	})
+
+	It("returns 0 and no error when no rows are old enough", func() {
+		ts := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+		Expect(s.InsertSample(ctx, store.Sample{TS: ts})).To(Succeed())
+
+		n, err := s.PruneSamples(ctx, ts.Add(-time.Hour)) // cutoff before the row
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeNumerically("==", 0))
+	})
+
+	It("returns 0 and no error on an empty table", func() {
+		n, err := s.PruneSamples(ctx, time.Now())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeNumerically("==", 0))
+	})
+
+	It("deletes all rows when `before` is in the far future", func() {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for i := 0; i < 5; i++ {
+			Expect(s.InsertSample(ctx, store.Sample{TS: base.Add(time.Duration(i) * time.Hour)})).To(Succeed())
+		}
+
+		n, err := s.PruneSamples(ctx, base.Add(24*time.Hour))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(BeNumerically("==", 5))
+
+		remaining, err := s.Samples(ctx, base, base.Add(48*time.Hour))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(remaining).To(BeEmpty())
+	})
+})

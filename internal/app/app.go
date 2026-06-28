@@ -74,11 +74,64 @@ func Run(ctx context.Context, cfg config.Config) error {
 		return srv.Start()
 	})
 
+	// Pruner: periodically delete stale samples/events to bound DB growth.
+	g.Go(func() error {
+		return runPruner(ctx, st, cfg.DB, log)
+	})
+
 	if err := g.Wait(); err != nil {
 		return err
 	}
 	log.Info("shutdown complete")
 	return nil
+}
+
+// runPruner deletes rows older than the configured retention windows on every
+// PruneInterval tick and then checkpoints the WAL so freed pages are returned
+// to the OS. It exits cleanly when ctx is canceled.
+func runPruner(ctx context.Context, st *store.Store, cfg config.DB, log *slog.Logger) error {
+	ticker := time.NewTicker(cfg.PruneInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case now := <-ticker.C:
+			pruneOnce(ctx, st, cfg, now, log)
+		}
+	}
+}
+
+func pruneOnce(ctx context.Context, st *store.Store, cfg config.DB, now time.Time, log *slog.Logger) {
+	pruned := false
+
+	if cfg.SampleRetention > 0 {
+		before := now.Add(-cfg.SampleRetention)
+		n, err := st.PruneSamples(ctx, before)
+		if err != nil {
+			log.Warn("pruner: PruneSamples failed", "err", err)
+		} else if n > 0 {
+			log.Info("pruner: pruned samples", "rows", n, "before", before.Format(time.RFC3339))
+			pruned = true
+		}
+	}
+
+	if cfg.EventRetention > 0 {
+		before := now.Add(-cfg.EventRetention)
+		n, err := st.PruneEvents(ctx, before)
+		if err != nil {
+			log.Warn("pruner: PruneEvents failed", "err", err)
+		} else if n > 0 {
+			log.Info("pruner: pruned events", "rows", n, "before", before.Format(time.RFC3339))
+			pruned = true
+		}
+	}
+
+	if pruned {
+		if err := st.Checkpoint(ctx); err != nil {
+			log.Warn("pruner: WAL checkpoint failed", "err", err)
+		}
+	}
 }
 
 func newLogger(level string) *slog.Logger {

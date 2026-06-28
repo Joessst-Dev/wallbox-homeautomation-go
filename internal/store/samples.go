@@ -82,6 +82,24 @@ func (s *Store) Samples(ctx context.Context, from, to time.Time) ([]Sample, erro
 	return out, nil
 }
 
+// PruneSamples deletes all samples with ts strictly before `before` and
+// returns the number of rows removed. It is safe to call with a zero `before`
+// (no rows will be deleted).
+func (s *Store) PruneSamples(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM samples WHERE ts < ?`,
+		formatTime(before),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("prune samples: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("prune samples: rows affected: %w", err)
+	}
+	return n, nil
+}
+
 // boolToInt encodes a bool as the SQLite integer 0/1.
 func boolToInt(b bool) int {
 	if b {
