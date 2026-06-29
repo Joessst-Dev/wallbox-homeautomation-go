@@ -40,6 +40,39 @@ func fakeGHCR(tags []string, failToken, failTags bool) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
+// fakeGHCRCounting behaves like fakeGHCR but records how many times the tags
+// endpoint is hit, so specs can assert the CheckTTL throttle.
+func fakeGHCRCounting(tags []string, calls *int) *httptest.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"token": "t0ken"})
+	})
+	mux.HandleFunc("/v2/"+repo+"/tags/list", func(w http.ResponseWriter, _ *http.Request) {
+		*calls++
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": tags})
+	})
+	return httptest.NewServer(mux)
+}
+
+// fakeGHCRPaged serves the tags across two pages, linking page 1 to page 2 with
+// a relative rel="next" Link header so pagination + baseURL resolution are
+// exercised.
+func fakeGHCRPaged(page1, page2 []string) *httptest.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"token": "t0ken"})
+	})
+	mux.HandleFunc("/v2/"+repo+"/tags/list", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("page") == "" {
+			w.Header().Set("Link", `</v2/`+repo+`/tags/list?page=2>; rel="next"`)
+			_ = json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": page1})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"name": repo, "tags": page2})
+	})
+	return httptest.NewServer(mux)
+}
+
 var _ = Describe("Updater", func() {
 	var (
 		ctx   context.Context
@@ -103,6 +136,39 @@ var _ = Describe("Updater", func() {
 
 			_, err := newUpdater("1.2.3", srv.URL).Check(ctx)
 			Expect(err).To(HaveOccurred())
+		})
+
+		It("follows Link headers to find a newer semver on a later page", func() {
+			srv := fakeGHCRPaged([]string{"1.2.3", "edge"}, []string{"1.4.0", "latest"})
+			defer srv.Close()
+
+			info, err := newUpdater("1.2.3", srv.URL).Check(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Latest).To(Equal("1.4.0"))
+			Expect(info.UpdateAvailable).To(BeTrue())
+		})
+
+		It("reuses a result within CheckTTL instead of re-querying", func() {
+			var calls int
+			srv := fakeGHCRCounting([]string{"1.3.0"}, &calls)
+			defer srv.Close()
+
+			u := newUpdater("1.2.3", srv.URL)
+			_, err := u.Check(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(calls).To(Equal(1))
+
+			// Second check within the TTL is served from cache.
+			clock = clock.Add(30 * time.Minute)
+			_, err = u.Check(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(calls).To(Equal(1))
+
+			// Past the TTL it queries again.
+			clock = clock.Add(31 * time.Minute)
+			_, err = u.Check(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(calls).To(Equal(2))
 		})
 	})
 

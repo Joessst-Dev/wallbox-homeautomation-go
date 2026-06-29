@@ -149,8 +149,18 @@ func (u *Updater) Info(_ context.Context) Info {
 	return info
 }
 
-// Check refreshes Latest from GHCR and returns the updated snapshot.
+// Check refreshes Latest from GHCR and returns the updated snapshot. To avoid
+// hammering the registry (e.g. an operator spamming the "Check" button), a
+// result younger than CheckTTL is reused instead of re-querying. A CheckTTL of
+// 0 disables the throttle and always hits the network.
 func (u *Updater) Check(ctx context.Context) (Info, error) {
+	u.mu.Lock()
+	fresh := !u.checked.IsZero() && u.cfg.CheckTTL > 0 && u.now().Sub(u.checked) < u.cfg.CheckTTL
+	u.mu.Unlock()
+	if fresh {
+		return u.Info(ctx), nil
+	}
+
 	latest, err := latestSemver(ctx, u.hc, u.baseURL, u.cfg.Repository)
 	if err != nil {
 		return u.Info(ctx), fmt.Errorf("check for updates: %w", err)
@@ -269,28 +279,82 @@ func fetchPullToken(ctx context.Context, hc *http.Client, baseURL, repo string) 
 	return body.Token, nil
 }
 
+// maxTagPages bounds the pagination loop so a misbehaving registry can never
+// hold the request open indefinitely. 100 pages × 100 tags/page is far beyond
+// any realistic tag count for this repo.
+const maxTagPages = 100
+
+// fetchTags lists every tag for repo, following the registry's RFC 5988
+// `Link: <url>; rel="next"` pagination so a newer semver on a later page is
+// never missed (GHCR defaults to 100 tags per page).
 func fetchTags(ctx context.Context, hc *http.Client, baseURL, repo, token string) ([]string, error) {
-	url := fmt.Sprintf("%s/v2/%s/tags/list", baseURL, repo)
+	next := fmt.Sprintf("%s/v2/%s/tags/list", baseURL, repo)
+	var all []string
+	for page := 0; next != "" && page < maxTagPages; page++ {
+		tags, link, err := fetchTagsPage(ctx, hc, next, token)
+		if err != nil {
+			return nil, err
+		}
+		all = append(all, tags...)
+		next = nextLink(link, baseURL)
+	}
+	return all, nil
+}
+
+// fetchTagsPage fetches a single tags page and returns its tags plus the raw
+// Link response header (empty when there is no further page).
+func fetchTagsPage(ctx context.Context, hc *http.Client, url, token string) ([]string, string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("build tags request: %w", err)
+		return nil, "", fmt.Errorf("build tags request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	resp, err := hc.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request tags: %w", err)
+		return nil, "", fmt.Errorf("request tags: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("tags endpoint returned %s", resp.Status)
+		return nil, "", fmt.Errorf("tags endpoint returned %s", resp.Status)
 	}
 	var body struct {
 		Tags []string `json:"tags"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return nil, fmt.Errorf("decode tags: %w", err)
+		return nil, "", fmt.Errorf("decode tags: %w", err)
 	}
-	return body.Tags, nil
+	return body.Tags, resp.Header.Get("Link"), nil
+}
+
+// nextLink extracts the rel="next" target from a Link header, resolving a
+// registry-relative path (e.g. "/v2/...") against baseURL. It returns "" when
+// there is no next page.
+func nextLink(header, baseURL string) string {
+	for part := range strings.SplitSeq(header, ",") {
+		segs := strings.Split(part, ";")
+		if len(segs) < 2 {
+			continue
+		}
+		urlPart := strings.TrimSpace(segs[0])
+		if !strings.HasPrefix(urlPart, "<") || !strings.HasSuffix(urlPart, ">") {
+			continue
+		}
+		isNext := false
+		for _, p := range segs[1:] {
+			if strings.ReplaceAll(strings.TrimSpace(p), `"`, "") == "rel=next" {
+				isNext = true
+			}
+		}
+		if !isNext {
+			continue
+		}
+		u := urlPart[1 : len(urlPart)-1]
+		if strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://") {
+			return u
+		}
+		return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(u, "/")
+	}
+	return ""
 }
 
 // maxSemver returns the highest X.Y.Z tag in tags, or "" if there are none.

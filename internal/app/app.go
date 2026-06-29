@@ -54,15 +54,17 @@ func Run(ctx context.Context, cfg config.Config, build BuildInfo) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Prime the GHCR check once at startup so the dashboard can show whether an
-	// update is available without the operator clicking "Check" first. Best
-	// effort: failures (offline broker, no network) are logged and retried on
-	// demand from the UI.
+	// update is available without the operator clicking "Check" first. Run it
+	// under the errgroup (returning nil) so its lifetime is bounded by ctx and it
+	// finishes before shutdown tears the logger down. Best effort: failures
+	// (offline, no network) are logged and retried on demand from the UI.
 	if cfg.Update.Enabled {
-		go func() {
+		g.Go(func() error {
 			if _, err := upd.Check(ctx); err != nil {
 				log.Info("updater: initial check failed", "err", err)
 			}
-		}()
+			return nil
+		})
 	}
 
 	// MQTT: connect (with built-in retry) without blocking shutdown.

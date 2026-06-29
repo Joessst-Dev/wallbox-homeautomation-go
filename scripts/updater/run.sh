@@ -33,10 +33,18 @@ is_semver() {
   echo "$1" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'
 }
 
+# json_escape makes an arbitrary string safe to embed in a JSON string value:
+# escape backslashes and double quotes, and drop newlines/carriage returns. Keep
+# this in front of every field interpolated into write_status — message strings
+# in particular may one day carry docker output.
+json_escape() {
+  printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n\r'
+}
+
 write_status() { # state targetVersion message
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   cat > "$STATUS.tmp" <<EOF
-{"state":"$1","targetVersion":"$2","message":"$3","updatedAt":"$ts"}
+{"state":"$(json_escape "$1")","targetVersion":"$(json_escape "$2")","message":"$(json_escape "$3")","updatedAt":"$ts"}
 EOF
   mv "$STATUS.tmp" "$STATUS"
 }
