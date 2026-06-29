@@ -86,6 +86,22 @@ var _ = Describe("InputsFromSnapshot", func() {
 		Expect(controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{}).Ready).To(BeFalse())
 	})
 
+	It("preserves a genuine 0% SoC and marks it known", func() {
+		s := fullSnap()
+		s.VehicleSoC = evcc.FloatMetric{Value: 0, At: now, Seen: true}
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		Expect(in.VehicleSoC).To(Equal(0))
+		Expect(in.VehicleSoCKnown).To(BeTrue())
+		Expect(in.Ready).To(BeTrue())
+	})
+
+	It("marks VehicleSoCKnown false when SoC was never seen", func() {
+		s := fullSnap()
+		s.VehicleSoC.Seen = false
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		Expect(in.VehicleSoCKnown).To(BeFalse())
+	})
+
 	It("computes surplus from the mapped inputs", func() {
 		// export 3000W, car drawing 0 → surplus 3000
 		in := controller.InputsFromSnapshot(now, fullSnap(), cfg, controller.OverrideAuto, time.Time{})

@@ -43,6 +43,10 @@ type fakeStore struct {
 	events   []store.Event
 	samples  []store.Sample
 	err      error
+
+	// gotFrom/gotTo record the last Samples range so specs can assert clamping.
+	gotFrom time.Time
+	gotTo   time.Time
 }
 
 func (f *fakeStore) RecentSessions(_ context.Context, limit int) ([]store.Session, error) {
@@ -65,7 +69,9 @@ func (f *fakeStore) RecentEvents(_ context.Context, limit int) ([]store.Event, e
 	return f.events, nil
 }
 
-func (f *fakeStore) Samples(_ context.Context, _, _ time.Time) ([]store.Sample, error) {
+func (f *fakeStore) Samples(_ context.Context, from, to time.Time) ([]store.Sample, error) {
+	f.gotFrom = from
+	f.gotTo = to
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -259,6 +265,32 @@ var _ = Describe("Web Server", func() {
 			Expect(out[0]["id"]).To(BeNumerically("==", 7))
 			Expect(out[0]["startReason"]).To(Equal("surplus"))
 			Expect(out[0]["energyKWh"]).To(Equal("5.40"))
+		})
+	})
+
+	Describe("GET /api/history", func() {
+		It("clamps an over-long range to the most recent 7 days", func() {
+			from := "2020-01-01T00:00:00Z" // years before to
+			to := "2026-06-28T00:00:00Z"
+			req := httptest.NewRequest(http.MethodGet,
+				"/api/history?from="+from+"&to="+to, nil)
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			window := st.gotTo.Sub(st.gotFrom)
+			Expect(window).To(BeNumerically("<=", web.MaxHistoryWindow()))
+			parsedTo, err := time.Parse(time.RFC3339, to)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(st.gotTo).To(BeTemporally("==", parsedTo))
+			Expect(st.gotFrom).To(BeTemporally("==", parsedTo.Add(-web.MaxHistoryWindow())))
+		})
+
+		It("rejects to before from with 400", func() {
+			req := httptest.NewRequest(http.MethodGet,
+				"/api/history?from=2026-06-28T00:00:00Z&to=2026-06-27T00:00:00Z", nil)
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 		})
 	})
 

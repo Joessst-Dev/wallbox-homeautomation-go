@@ -32,18 +32,19 @@ func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ov O
 		!fresh(s.PV)
 
 	return Inputs{
-		GridW:         s.Grid.Value,
-		PVW:           s.PV.Value,
-		HomeW:         s.Home.Value,
-		BatteryW:      s.BatteryPower.Value,
-		ChargeW:       s.ChargePower.Value,
-		BatterySoC:    int(math.Round(s.BatterySoC.Value)),
-		VehicleSoC:    int(math.Round(s.VehicleSoC.Value)),
-		Charging:      s.Charging.Value,
-		Connected:     s.Connected.Value,
-		Ready:         ready,
-		Stale:         stale,
-		Override:      ov,
-		OverrideUntil: ovUntil,
+		GridW:           s.Grid.Value,
+		PVW:             s.PV.Value,
+		HomeW:           s.Home.Value,
+		BatteryW:        s.BatteryPower.Value,
+		ChargeW:         s.ChargePower.Value,
+		BatterySoC:      int(math.Round(s.BatterySoC.Value)),
+		VehicleSoC:      int(math.Round(s.VehicleSoC.Value)),
+		VehicleSoCKnown: s.VehicleSoC.Seen,
+		Charging:        s.Charging.Value,
+		Connected:       s.Connected.Value,
+		Ready:           ready,
+		Stale:           stale,
+		Override:        ov,
+		OverrideUntil:   ovUntil,
 	}
 }

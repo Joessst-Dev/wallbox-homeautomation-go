@@ -27,8 +27,11 @@ type Recorder interface {
 	InsertEvent(ctx context.Context, e store.Event) error
 	InsertSample(ctx context.Context, sm store.Sample) error
 	StartSession(ctx context.Context, startedAt time.Time, startReason string, startVehicleSoC *int) (int64, error)
+	UpdateSessionMetrics(ctx context.Context, id int64, energyWh, avgChargeW, peakChargeW float64) error
 	EndSession(ctx context.Context, id int64, endedAt time.Time, stopReason string, endVehicleSoC *int, energyWh, avgChargeW, peakChargeW float64) error
 	OpenSession(ctx context.Context) (*store.Session, error)
+	PruneSamples(ctx context.Context, before time.Time) (int64, error)
+	PruneEvents(ctx context.Context, before time.Time) (int64, error)
 }
 
 // Controller runs the periodic decision loop: read evcc state, decide, publish
@@ -59,6 +62,7 @@ type Controller struct {
 	limitSoCSet         bool // limitSoc backstop confirmed published at least once
 	lastLimitPublishAt  time.Time
 	prevBrokerConnected bool
+	prevOnline          bool
 	prevCharging        bool
 	sessionID           int64
 	sessionPeakW        float64
@@ -86,6 +90,10 @@ func New(cfg config.Control, cmd Commander, snaps SnapshotProvider, rec Recorder
 // publishLimitSoCBackstop), so it survives a broker that is down at startup.
 func (c *Controller) Run(ctx context.Context) error {
 	c.recoverDanglingSession(ctx)
+
+	if c.cfg.RetentionWindow > 0 {
+		go c.janitor(ctx)
+	}
 
 	ticker := time.NewTicker(c.cfg.DecisionInterval)
 	defer ticker.Stop()
@@ -121,7 +129,10 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	c.mu.Lock()
 	c.state = dec.State
 	c.timers = dec.Timers
-	if expireOverride {
+	// Only clear the override if it is still the one we read above: a SetOverride
+	// (e.g. a manual ForceOff) racing in during the unlocked window must win, not
+	// be silently discarded by this stale-read expiry.
+	if expireOverride && c.override == ov && c.overrideUntil.Equal(ovUntil) {
 		c.override = OverrideAuto
 		c.overrideUntil = time.Time{}
 	}
@@ -135,6 +146,12 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	// --- loop-owned from here; no lock ---
 	reconnected := snap.BrokerConnected && !c.prevBrokerConnected
 	c.prevBrokerConnected = snap.BrokerConnected
+	// onlineEdge fires when evcc's LWT transitions to online (e.g. evcc restarted
+	// while our broker connection stayed up): re-assert mode + limitSoc backstop
+	// without waiting for the Republish cadence.
+	onlineEdge := snap.Online.Value && !c.prevOnline
+	c.prevOnline = snap.Online.Value
+	force := reconnected || onlineEdge
 
 	if dec.State != prevState {
 		c.recordEvent(ctx, store.Event{
@@ -147,16 +164,17 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 			"surplus", surplus, "vehicleSoc", in.VehicleSoC)
 	}
 
-	c.publishMode(ctx, now, dec, in, surplus, reconnected)
-	c.publishLimitSoCBackstop(now, snap.BrokerConnected, reconnected)
+	c.publishMode(ctx, now, dec, in, surplus, force)
+	c.publishLimitSoCBackstop(now, snap.BrokerConnected, force)
 	c.trackSession(ctx, now, in, dec.State)
 	c.recordSample(ctx, now, in, surplus, dec)
 }
 
-// publishMode sends the desired mode when it changes, on reconnect, or on the
-// periodic republish cadence (set-topics are not retained).
-func (c *Controller) publishMode(ctx context.Context, now time.Time, dec Decision, in Inputs, surplus float64, reconnected bool) {
-	if dec.DesiredMode == c.lastMode && !reconnected && now.Sub(c.lastPublishAt) < c.cfg.Republish {
+// publishMode sends the desired mode when it changes, when forced (broker
+// reconnect or evcc online edge), or on the periodic republish cadence
+// (set-topics are not retained).
+func (c *Controller) publishMode(ctx context.Context, now time.Time, dec Decision, in Inputs, surplus float64, force bool) {
+	if dec.DesiredMode == c.lastMode && !force && now.Sub(c.lastPublishAt) < c.cfg.Republish {
 		return
 	}
 	changed := dec.DesiredMode != c.lastMode
@@ -176,12 +194,13 @@ func (c *Controller) publishMode(ctx context.Context, now time.Time, dec Decisio
 
 // publishLimitSoCBackstop keeps evcc's loadpoint limitSoc set to the SoC cap so
 // evcc enforces the stop even if wha dies. It retries until the first success,
-// re-asserts on every broker reconnect, and refreshes on the republish cadence.
-func (c *Controller) publishLimitSoCBackstop(now time.Time, brokerConnected, reconnected bool) {
+// re-asserts when forced (broker reconnect or evcc online edge), and refreshes
+// on the republish cadence.
+func (c *Controller) publishLimitSoCBackstop(now time.Time, brokerConnected, force bool) {
 	if !brokerConnected {
 		return
 	}
-	if c.limitSoCSet && !reconnected && now.Sub(c.lastLimitPublishAt) < c.cfg.Republish {
+	if c.limitSoCSet && !force && now.Sub(c.lastLimitPublishAt) < c.cfg.Republish {
 		return
 	}
 	if err := c.cmd.SetLimitSoC(c.cfg.SoCCap); err != nil {
@@ -199,7 +218,7 @@ func (c *Controller) trackSession(ctx context.Context, now time.Time, in Inputs,
 	switch {
 	case in.Charging && !c.prevCharging:
 		c.sessionPeakW, c.sessionEnWh, c.sessionSumW, c.sessionTicks = 0, 0, 0, 0
-		id, err := c.rec.StartSession(ctx, now, startReasonFor(now, in), intPtrOrNil(in.VehicleSoC))
+		id, err := c.rec.StartSession(ctx, now, startReasonFor(now, in), socPtr(in.VehicleSoC, in.VehicleSoCKnown))
 		if err != nil {
 			c.log.Warn("controller: StartSession failed", "err", err)
 		} else {
@@ -217,6 +236,15 @@ func (c *Controller) trackSession(ctx context.Context, now time.Time, in Inputs,
 		if in.ChargeW > c.sessionPeakW {
 			c.sessionPeakW = in.ChargeW
 		}
+		// Persist the running totals every tick so a crash leaves the open row with
+		// meaningful energy/avg/peak for recoverDanglingSession to close (single
+		// writer + WAL keeps this cheap at our volume).
+		if c.sessionID != 0 {
+			avg := c.sessionSumW / float64(c.sessionTicks) // ticks >= 1 here
+			if err := c.rec.UpdateSessionMetrics(ctx, c.sessionID, c.sessionEnWh, avg, c.sessionPeakW); err != nil {
+				c.log.Warn("controller: UpdateSessionMetrics failed", "err", err)
+			}
+		}
 	}
 	c.prevCharging = in.Charging
 }
@@ -229,7 +257,7 @@ func (c *Controller) closeSession(ctx context.Context, now time.Time, in Inputs,
 	if c.sessionTicks > 0 {
 		avg = c.sessionSumW / float64(c.sessionTicks)
 	}
-	if err := c.rec.EndSession(ctx, c.sessionID, now, reason, intPtrOrNil(in.VehicleSoC),
+	if err := c.rec.EndSession(ctx, c.sessionID, now, reason, socPtr(in.VehicleSoC, in.VehicleSoCKnown),
 		c.sessionEnWh, avg, c.sessionPeakW); err != nil {
 		c.log.Warn("controller: EndSession failed", "err", err)
 	}
@@ -250,6 +278,39 @@ func (c *Controller) recoverDanglingSession(ctx context.Context) {
 		} else {
 			c.log.Info("controller: closed dangling session", "id", open.ID)
 		}
+	}
+}
+
+// janitor periodically prunes samples and events older than RetentionWindow so
+// the SQLite database does not grow without bound. It runs until ctx is done.
+func (c *Controller) janitor(ctx context.Context) {
+	ticker := time.NewTicker(c.cfg.RetentionInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.prune(ctx)
+		}
+	}
+}
+
+// prune deletes samples and events older than the retention window, logging the
+// number of rows removed.
+func (c *Controller) prune(ctx context.Context) {
+	before := c.clock.Now().Add(-c.cfg.RetentionWindow)
+	samples, err := c.rec.PruneSamples(ctx, before)
+	if err != nil {
+		c.log.Warn("controller: PruneSamples failed", "err", err)
+	}
+	events, err := c.rec.PruneEvents(ctx, before)
+	if err != nil {
+		c.log.Warn("controller: PruneEvents failed", "err", err)
+	}
+	if samples > 0 || events > 0 {
+		c.log.Info("controller: pruned old rows",
+			"before", before, "samples", samples, "events", events)
 	}
 }
 
@@ -346,8 +407,10 @@ func (c *Controller) Status() StatusView {
 	}
 }
 
-func intPtrOrNil(v int) *int {
-	if v == 0 {
+// socPtr returns a pointer to v only when the value is actually known, so a
+// genuine 0% vehicle SoC is persisted as 0 rather than collapsed to NULL.
+func socPtr(v int, known bool) *int {
+	if !known {
 		return nil
 	}
 	return &v
