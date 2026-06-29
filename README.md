@@ -213,13 +213,14 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
 | `mqtt.username` / `password`| empty                | Broker credentials (set these — see Security) |
 | `mqtt.topicPrefix`          | `evcc`               | evcc's MQTT topic prefix |
 | `evcc.loadpointID`          | `1`                  | Which evcc loadpoint to control (1-based) |
-| `control.enableMode`        | `pv`                 | Mode published when charging is enabled (`pv` or `now`) |
+| `control.enableMode`        | `pv`                 | Initial charge mode (`pv` or `now`); switchable at runtime from the dashboard and persisted |
 | `control.startThresholdW`   | `1400`               | Surplus (W) required to start charging |
 | `control.stopThresholdW`    | `0`                  | Surplus (W) below which charging stops |
 | `control.startDwell`        | `2m`                 | Surplus must hold this long before starting (anti-flap) |
 | `control.stopDwell`         | `3m`                 | Low surplus must hold this long before stopping |
 | `control.socCap`            | `80`                 | Stop charging at this vehicle SoC (%) |
 | `control.socResumeBelow`    | `78`                 | Only resume once SoC drops below this (latch) |
+| `control.socMax`            | `100`                | Ceiling when "Charge now → charge past the cap" is used (`> socCap`, `<= 100`) |
 | `control.decisionInterval`  | `15s`                | How often the control loop evaluates |
 | `control.staleTimeout`      | `60s`                | Fast power metrics older than this → fail-safe (off) |
 | `control.republish`         | `5m`                 | Re-send mode + limitSoc backstop (set-topics aren't retained) |
@@ -237,7 +238,11 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
   resumes below `socResumeBelow`, preventing flapping at the boundary.
 - **Dead-man backstop.** wha keeps evcc's loadpoint `limitSoc` set to `socCap` and
   re-asserts it on broker reconnect and on the evcc-online edge, so evcc enforces the
-  stop even if wha crashes or the broker blips.
+  stop even if wha crashes or the broker blips. The only exception is an explicit
+  **"Charge now → charge past the cap"** action, which lifts the backstop to `socMax`
+  for the duration of that override and restores `socCap` the moment it ends.
+- **Charge power is operator-selectable.** The dashboard switches between surplus-only
+  (`pv`) and full-power (`now`) charging at runtime; the choice persists across restarts.
 - **Vehicle SoC is never stale-gated.** evcc polls the Renault cloud ~hourly and only
   while charging, so the last known SoC is always used (the backstop bounds any overshoot).
 

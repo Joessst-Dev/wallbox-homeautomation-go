@@ -20,6 +20,7 @@ func baseConfig() config.Control {
 		StopDwell:        120 * time.Second,
 		SoCCap:           80,
 		SoCResumeBelow:   78,
+		SoCMax:           100,
 		DecisionInterval: 15 * time.Second,
 		StaleTimeout:     60 * time.Second,
 		Republish:        5 * time.Minute,
@@ -444,5 +445,92 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
 		})
+	})
+
+	Context("runtime charge-power mode", func() {
+		It("force-on uses the runtime ChargePower over the config default", func() {
+			in := baseInputs()
+			in.Override = controller.OverrideForceOn
+			in.ChargePower = config.EnableModeNow // config default is pv
+			in.GridW = 5000                       // no surplus
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateCharging))
+			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
+		})
+
+		It("automatic start uses the runtime ChargePower", func() {
+			in := baseInputs()
+			in.ChargePower = config.EnableModeNow
+			in.ChargeW = 1500 // surplus over the start threshold
+
+			timers := controller.Timers{CrossedUpAt: t0}
+			clock.Advance(60 * time.Second)
+
+			d := controller.Decide(clock.Now(), in, controller.StateSurplusPending, timers, cfg)
+
+			Expect(d.State).To(Equal(controller.StateCharging))
+			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
+		})
+
+		It("falls back to the config default when ChargePower is unset", func() {
+			in := baseInputs()
+			in.Override = controller.OverrideForceOn // ChargePower empty
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.DesiredMode).To(Equal(config.EnableModePV))
+		})
+	})
+})
+
+var _ = Describe("LimitSoCTarget", func() {
+	var (
+		cfg config.Control
+		t0  time.Time
+	)
+
+	BeforeEach(func() {
+		cfg = baseConfig() // SoCCap 80, SoCMax 100
+		t0 = time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	})
+
+	It("returns the cap for automatic control", func() {
+		in := controller.Inputs{Override: controller.OverrideAuto}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCCap))
+	})
+
+	It("returns the cap for a plain force-on (no bypass)", func() {
+		in := controller.Inputs{Override: controller.OverrideForceOn}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCCap))
+	})
+
+	It("lifts to SoCMax for a cap-bypass force-on", func() {
+		in := controller.Inputs{Override: controller.OverrideForceOn, OverrideCapBypass: true}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCMax))
+	})
+
+	It("lifts to SoCMax for a still-active, time-bounded cap-bypass", func() {
+		in := controller.Inputs{
+			Override:          controller.OverrideForceOn,
+			OverrideCapBypass: true,
+			OverrideUntil:     t0.Add(time.Hour), // not yet expired
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCMax))
+	})
+
+	It("ignores cap-bypass once the override has expired", func() {
+		in := controller.Inputs{
+			Override:          controller.OverrideForceOn,
+			OverrideCapBypass: true,
+			OverrideUntil:     t0.Add(-time.Second), // expired
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCCap))
+	})
+
+	It("ignores cap-bypass when set on a non-force-on override", func() {
+		in := controller.Inputs{Override: controller.OverrideForceOff, OverrideCapBypass: true}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCCap))
 	})
 })

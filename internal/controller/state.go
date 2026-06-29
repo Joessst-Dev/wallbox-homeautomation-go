@@ -46,6 +46,23 @@ const (
 // ModeOff is the desired evcc mode meaning "do not charge".
 const ModeOff = "off"
 
+// ControlState is the operator-settable runtime state layered on top of the
+// static config. It is the bundle the loop passes through the pure boundary
+// (InputsFromSnapshot) each tick.
+type ControlState struct {
+	// Override is the manual override (auto|on|off) and its optional expiry.
+	Override      Override
+	OverrideUntil time.Time
+	// CapBypass, meaningful only for a ForceOn override, lifts the evcc limitSoc
+	// backstop from SoCCap to SoCMax so the user can deliberately charge past the
+	// cap. It expires together with the override.
+	CapBypass bool
+	// ChargePower is the effective evcc charge mode used whenever charging is
+	// enabled (config.EnableModePV or config.EnableModeNow). It is a persistent,
+	// global operator setting, not tied to the override.
+	ChargePower string
+}
+
 // Inputs is a snapshot of all metrics and flags the decision engine consumes.
 type Inputs struct {
 	GridW      float64 // + = import from grid
@@ -65,6 +82,10 @@ type Inputs struct {
 	Stale           bool // a required metric is stale OR the broker is disconnected
 	Override        Override
 	OverrideUntil   time.Time // zero value = no expiry
+	// OverrideCapBypass lifts the SoC cap while a ForceOn override is active.
+	OverrideCapBypass bool
+	// ChargePower is the effective evcc charge mode (pv|now) when charging is on.
+	ChargePower string
 }
 
 // Timers carries the dwell bookkeeping between decisions.

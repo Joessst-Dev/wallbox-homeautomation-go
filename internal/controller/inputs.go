@@ -19,7 +19,7 @@ import (
 //     NOT part of staleness: evcc refreshes it at most ~hourly, so the last
 //     known value is used for the SoC cap regardless of age (the evcc limitSoc
 //     backstop bounds any overshoot).
-func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ov Override, ovUntil time.Time) Inputs {
+func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ctrl ControlState) Inputs {
 	fresh := func(m evcc.FloatMetric) bool {
 		return m.Seen && now.Sub(m.At) <= cfg.StaleTimeout
 	}
@@ -32,19 +32,21 @@ func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ov O
 		!fresh(s.PV)
 
 	return Inputs{
-		GridW:           s.Grid.Value,
-		PVW:             s.PV.Value,
-		HomeW:           s.Home.Value,
-		BatteryW:        s.BatteryPower.Value,
-		ChargeW:         s.ChargePower.Value,
-		BatterySoC:      int(math.Round(s.BatterySoC.Value)),
-		VehicleSoC:      int(math.Round(s.VehicleSoC.Value)),
-		VehicleSoCKnown: s.VehicleSoC.Seen,
-		Charging:        s.Charging.Value,
-		Connected:       s.Connected.Value,
-		Ready:           ready,
-		Stale:           stale,
-		Override:        ov,
-		OverrideUntil:   ovUntil,
+		GridW:             s.Grid.Value,
+		PVW:               s.PV.Value,
+		HomeW:             s.Home.Value,
+		BatteryW:          s.BatteryPower.Value,
+		ChargeW:           s.ChargePower.Value,
+		BatterySoC:        int(math.Round(s.BatterySoC.Value)),
+		VehicleSoC:        int(math.Round(s.VehicleSoC.Value)),
+		VehicleSoCKnown:   s.VehicleSoC.Seen,
+		Charging:          s.Charging.Value,
+		Connected:         s.Connected.Value,
+		Ready:             ready,
+		Stale:             stale,
+		Override:          ctrl.Override,
+		OverrideUntil:     ctrl.OverrideUntil,
+		OverrideCapBypass: ctrl.CapBypass,
+		ChargePower:       ctrl.ChargePower,
 	}
 }
