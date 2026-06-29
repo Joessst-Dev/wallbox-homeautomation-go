@@ -163,7 +163,8 @@ opens `/dev/tty` for interactive prompts. If you're running without a terminal
 directly, or pre-supply all values via environment variables:
 
 ```sh
-curl -fsSL .../install.sh -o install.sh
+curl -fsSL https://raw.githubusercontent.com/Joessst-Dev/wallbox-homeautomation-go/main/scripts/install.sh \
+  -o install.sh
 WHA_DIR=/opt/wha WHA_IMAGE_TAG=edge bash install.sh
 ```
 
@@ -179,7 +180,10 @@ docker compose -f ~/wha/docker-compose.yml up -d
 
 ### No data on the dashboard / `readyz` returns 503
 
-wha can't reach the broker or evcc isn't publishing. Check that `evcc.yaml`
+`/healthz` confirms the wha process started (so the installer prints "wha is
+up!"); `/readyz` confirms it has connected to MQTT and is receiving state from
+evcc. If the dashboard is empty, `curl http://localhost:8080/readyz` — a 503
+means wha can't reach the broker or evcc isn't publishing. Check that `evcc.yaml`
 has an `mqtt:` block pointing at `mosquitto:1883`, that the MQTT credentials
 match what's in `config.yaml`, and that both containers are running:
 
@@ -196,7 +200,9 @@ exactly — see [docs/mqtt.md](mqtt.md) for the full topic contract.
 Checkconfig cannot reach your inverter during install (it's a LAN device, not a
 container), so connection errors are expected and the script asks whether to
 continue. Schema errors (missing or misspelled fields) mean `evcc.yaml` needs
-editing — fix it and re-run the installer, or edit the file and run:
+editing — fix it and re-run the installer, or edit the file and run (swap
+`evcc/evcc` for whichever evcc image your `~/wha/docker-compose.yml` pins, so
+the schema matches what the stack actually runs):
 
 ```sh
 docker run --rm \
