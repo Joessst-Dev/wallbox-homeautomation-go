@@ -13,6 +13,20 @@
     {{template "partials/status" .Status}}
   </div>
 
+  <!--
+    Software update: shows the running version and (when the updater sidecar is
+    enabled) lets the operator check GHCR and apply a newer release. Polled
+    slowly so an in-flight update's progress surfaces without spamming the
+    handler; the check/apply actions target this same #update container.
+  -->
+  <div id="update"
+       hx-get="/partials/update"
+       hx-trigger="every 15s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/update" .Update}}
+  </div>
+
   <!-- Recent sessions -->
   <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
     <div class="mb-3 flex items-center justify-between">

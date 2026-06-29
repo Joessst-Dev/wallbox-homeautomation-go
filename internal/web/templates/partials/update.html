@@ -1,0 +1,81 @@
+<section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+  <div class="mb-3 flex items-center justify-between">
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Software</h2>
+    <span class="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+      <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/><circle cx="12" cy="12" r="4"/></svg>
+      v{{.Current}}
+    </span>
+  </div>
+
+  {{if not .Enabled}}
+  {{- /* No sidecar: updates happen out-of-band. */ -}}
+  <p class="text-sm text-slate-500 dark:text-slate-400">
+    In-app updates are disabled. Update from the Pi with
+    <code class="rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800">docker compose pull &amp;&amp; docker compose up -d</code>.
+  </p>
+
+  {{else}}
+
+  {{if .Applying}}
+  {{- /* An update is in flight; wha is about to (or has just) restarted. */ -}}
+  <div role="status" class="flex items-start gap-3 rounded-xl border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-500/40 dark:bg-sky-500/10 dark:text-sky-200">
+    <svg class="mt-0.5 h-5 w-5 shrink-0 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></svg>
+    <div>
+      <p class="font-semibold">Updating to v{{.TargetVersion}}…</p>
+      <p class="text-[0.8125rem] opacity-90">{{if .Message}}{{.Message}}{{else}}wha will restart and the dashboard will reconnect shortly.{{end}}</p>
+    </div>
+  </div>
+
+  {{else}}
+
+  {{if .Failed}}
+  <div role="alert" class="mb-3 flex items-start gap-3 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200">
+    <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg>
+    <div>
+      <p class="font-semibold">Last update failed</p>
+      {{if .Message}}<p class="text-[0.8125rem] opacity-90">{{.Message}}</p>{{end}}
+    </div>
+  </div>
+  {{end}}
+
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="text-sm">
+      {{if .UpdateAvailable}}
+      <p class="font-semibold text-emerald-700 dark:text-emerald-400">Update available: v{{.Latest}}</p>
+      {{else if .Checked}}
+      <p class="font-medium text-slate-600 dark:text-slate-300">Up to date{{if .Latest}} (latest v{{.Latest}}){{end}}</p>
+      {{else}}
+      <p class="text-slate-500 dark:text-slate-400">Not checked yet.</p>
+      {{end}}
+      {{if .Checked}}<p class="text-xs text-slate-400 dark:text-slate-500">Checked {{.CheckedAgo}}</p>{{end}}
+    </div>
+
+    <div class="flex items-center gap-2">
+      <button type="button"
+              hx-post="/api/update/check"
+              hx-target="#update"
+              hx-swap="innerHTML"
+              class="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.6"/><path d="M21 3v6h-6"/></svg>
+        Check
+      </button>
+
+      {{if .UpdateAvailable}}
+      <form hx-post="/api/update/apply"
+            hx-target="#update"
+            hx-swap="innerHTML"
+            hx-confirm="Update wha to v{{.Latest}} now? The service will restart.">
+        <input type="hidden" name="version" value="{{.Latest}}">
+        <button type="submit"
+                class="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl border border-emerald-600 bg-emerald-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:border-emerald-500 dark:bg-emerald-500 dark:hover:bg-emerald-600">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg>
+          Update to v{{.Latest}}
+        </button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+
+  {{end}}{{/* not applying */}}
+  {{end}}{{/* enabled */}}
+</section>

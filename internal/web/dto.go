@@ -7,6 +7,7 @@ import (
 
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/controller"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/store"
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/updater"
 )
 
 // StatusVM is the flat status view model shared by the JSON API and the HTML
@@ -109,6 +110,51 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 	return vm
 }
 
+// UpdateVM is the display-ready software-update view model. Like StatusVM it is
+// logic-free: the template only reads booleans and pre-formatted strings.
+type UpdateVM struct {
+	Enabled         bool   `json:"enabled"`
+	Current         string `json:"current"`
+	Latest          string `json:"latest,omitempty"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+
+	// Checked is true once a GHCR check has run; CheckedAgo is a short relative
+	// label for when it last ran.
+	Checked    bool   `json:"checked"`
+	CheckedAgo string `json:"checkedAgo,omitempty"`
+
+	// State mirrors the sidecar (idle|applying|done|failed); the booleans below
+	// are the same value pre-reduced for the template.
+	State         string `json:"state,omitempty"`
+	Message       string `json:"message,omitempty"`
+	TargetVersion string `json:"targetVersion,omitempty"`
+	Applying      bool   `json:"applying"`
+	Done          bool   `json:"done"`
+	Failed        bool   `json:"failed"`
+}
+
+// newUpdateVM flattens an updater.Info into the template/JSON view model. now is
+// injected so the "ago" formatting is deterministic in tests.
+func newUpdateVM(now time.Time, info updater.Info) UpdateVM {
+	vm := UpdateVM{
+		Enabled:         info.Enabled,
+		Current:         info.Current,
+		Latest:          info.Latest,
+		UpdateAvailable: info.UpdateAvailable,
+		State:           info.State,
+		Message:         info.Message,
+		TargetVersion:   info.TargetVersion,
+		Applying:        info.State == "applying",
+		Done:            info.State == "done",
+		Failed:          info.State == "failed",
+	}
+	if !info.CheckedAt.IsZero() {
+		vm.Checked = true
+		vm.CheckedAgo = humanizeAgo(now.Sub(info.CheckedAt))
+	}
+	return vm
+}
+
 // SessionVM is the flattened, display-ready form of a charge session.
 type SessionVM struct {
 	ID              int64  `json:"id"`
@@ -158,6 +204,7 @@ type dashboardVM struct {
 	Title    string
 	Status   StatusVM
 	Sessions []SessionVM
+	Update   UpdateVM
 }
 
 // watts rounds a power value to whole watts.

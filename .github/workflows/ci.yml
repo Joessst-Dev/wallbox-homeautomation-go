@@ -39,6 +39,9 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: updater sidecar self-test (semver guard + tag rewrite)
+        run: sh scripts/updater/run.sh _selftest
+
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:

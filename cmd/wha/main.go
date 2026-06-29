@@ -39,7 +39,8 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
-	if err := app.Run(context.Background(), cfg); err != nil {
+	build := app.BuildInfo{Version: version, Commit: commit, Date: date}
+	if err := app.Run(context.Background(), cfg, build); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

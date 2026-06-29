@@ -10,6 +10,11 @@ services:
     build: .
     # Tag the local build distinctly so it never clobbers the pulled :edge image.
     image: ghcr.io/joessst-dev/wha:local
+    # The in-UI updater pulls published semver images; that makes no sense for a
+    # from-source build, so turn it off for local dev (the "Software" card then
+    # shows the manual-update note instead).
+    environment:
+      - WHA_UPDATE_ENABLED=false
     # Pass --build (the documented command + `make compose-local` both do) to pick
     # up source changes. We intentionally avoid `pull_policy: build` here: it needs
     # Docker Compose >= 2.17 and is silently ignored on older Pi OS toolchains,

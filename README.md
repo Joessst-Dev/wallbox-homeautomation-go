@@ -148,6 +148,26 @@ Switch the `wha` image tag to `:latest` or a `:x.y.z` once you cut a release.
 docker compose pull wha && docker compose up -d
 ```
 
+…or use the **Software** card on the dashboard (see below) to do it in place.
+
+### In-UI software update
+
+The dashboard's **Software** card shows the running version, checks GHCR for a
+newer release, and upgrades in place — no SSH needed. Because `wha` runs as a
+distroless, non-root container with no Docker socket, it cannot replace its own
+image; the bundled **`wha-updater`** sidecar does that for it:
+
+1. `wha` checks GHCR for the newest semver tag and, on **Update**, writes the
+   chosen version into a shared `wha-update` volume (validated as strict
+   `X.Y.Z` — it can only ever name an image tag).
+2. `wha-updater` (which owns the Docker socket) pins that tag in
+   `docker-compose.yml` and runs `docker compose up -d wha`, recreating **only**
+   the `wha` service. Your data volume (`wha-data`) survives the swap.
+
+The Compose stack enables this via `WHA_UPDATE_ENABLED=true`; it is off by
+default elsewhere (and in local source builds) since it needs the sidecar. See
+the `update:` section in `config.yaml` for the knobs.
+
 #### Run a local source build instead
 
 To build `wha` from source instead of pulling the image, layer the local override

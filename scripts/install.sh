@@ -243,6 +243,10 @@ if [ -z "$REUSE" ]; then
   log "Downloading stack files…"
   fetch "docker-compose.yml" "docker-compose.yml"
   fetch "config.yaml" "config.yaml"
+  # The wha-updater sidecar (in-UI software update) runs this script.
+  mkdir -p "$INSTALL_DIR/scripts/updater"
+  fetch "scripts/updater/run.sh" "scripts/updater/run.sh"
+  chmod +x "$INSTALL_DIR/scripts/updater/run.sh"
   select_version
   apply_image_tag
 
@@ -461,6 +465,7 @@ ${B}All set.${R}
   evcc UI       : http://${ip}:7070
 
   Logs    : docker compose -f $INSTALL_DIR/docker-compose.yml logs -f wha
-  Update  : docker compose -f $INSTALL_DIR/docker-compose.yml pull && \\
+  Update  : from the dashboard — the "Software" card checks GHCR and upgrades in place.
+            Or manually: docker compose -f $INSTALL_DIR/docker-compose.yml pull && \\
             docker compose -f $INSTALL_DIR/docker-compose.yml up -d
 EOF

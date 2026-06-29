@@ -35,6 +35,17 @@ db:
 
 log:
   level: info # debug | info | warn | error
+
+update:
+  # In-UI software update (the dashboard "Software" card). When enabled, wha
+  # checks GHCR for newer semver releases and hands the chosen version to the
+  # wha-updater sidecar, which performs the pull + recreate. The docker-compose
+  # stack turns this on via WHA_UPDATE_ENABLED=true; it stays off otherwise
+  # because it requires that sidecar.
+  enabled: false
+  repository: joessst-dev/wha # GHCR package path checked for newer releases
+  requestDir: /run/update # shared volume the wha-updater sidecar watches
+  checkTTL: 1h # how long a GHCR check result is reused before re-querying
 # SECURITY: MQTT is the ONLY thing protecting charge control — evcc does not
 # authenticate set-topics. Lock down Mosquitto with credentials + ACLs that
 # restrict wha to evcc/loadpoints/<id>/.../set, and never expose the broker.
