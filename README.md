@@ -1,5 +1,7 @@
 # wha — Wallbox Home Automation
 
+[![📖 User manual](https://img.shields.io/badge/docs-user%20manual-blue)](https://joessst-dev.github.io/wallbox-homeautomation-go/)
+
 A small Go service that runs PV-surplus EV charging on top of [evcc](https://evcc.io).
 It reads live state from evcc over MQTT, applies its own decision policy, and toggles
 the loadpoint — with a web dashboard and history.
@@ -94,7 +96,7 @@ internal/web        Fiber + htmx + Tailwind dashboard and JSON API
 internal/app        composition root (errgroup, graceful shutdown)
 ```
 
-See [docs/mqtt.md](docs/mqtt.md) for the exact evcc MQTT topic contract and
+See the [MQTT topic contract](https://joessst-dev.github.io/wallbox-homeautomation-go/reference/mqtt) in the user manual and
 [CONTRIBUTING.md](CONTRIBUTING.md) for build/test conventions.
 
 ## Run
@@ -116,7 +118,7 @@ The manual path below is the equivalent done by hand.
 
 For the full walkthrough — what the script does step by step, all env overrides,
 generated files, re-run behaviour, version model, and troubleshooting — see
-**[docs/install.md](docs/install.md)**.
+**[User manual → Quick Install](https://joessst-dev.github.io/wallbox-homeautomation-go/guide/quick-install)**.
 
 - wha dashboard: `http://<pi>:8080`
 - evcc UI: `http://<pi>:7070`
@@ -260,7 +262,7 @@ model and a possible finer two-user hardening split.
   `*_wha-data` volume).
 - **No data on the dashboard / `readyz` is 503.** wha can't reach the broker or evcc isn't
   publishing. Confirm evcc has an `mqtt:` block pointing at Mosquitto, and inspect topics
-  with MQTT Explorer. Topic names/casing must match — see [docs/mqtt.md](docs/mqtt.md).
+  with MQTT Explorer. Topic names/casing must match — see the [MQTT contract](https://joessst-dev.github.io/wallbox-homeautomation-go/reference/mqtt).
 - **Sungrow values missing/zero.** The WiNet-S dongle needs recent firmware and Modbus TCP
   enabled (port 502); older firmware doesn't expose power/SoC.
 - **Charging won't start on a fresh setup.** evcc only polls vehicle SoC while charging, so
@@ -270,8 +272,8 @@ model and a possible finer two-user hardening split.
   interval; the evcc `limitSoc` backstop bounds it.
 - **Brief grid draw in `pv` mode.** There's an unavoidable minimum charge power
   (~1.4 kW single-phase), so a little grid import can occur as surplus dips before evcc pauses.
-- **Installer issues.** See [docs/install.md — Troubleshooting](docs/install.md#troubleshooting)
-  for installer-specific problems (missing terminal, Docker daemon, checkconfig errors).
+- **Installer issues.** See [Troubleshooting](https://joessst-dev.github.io/wallbox-homeautomation-go/reference/troubleshooting)
+  in the user manual for installer-specific problems (missing terminal, Docker daemon, checkconfig errors).
 
 ## CI/CD
 
