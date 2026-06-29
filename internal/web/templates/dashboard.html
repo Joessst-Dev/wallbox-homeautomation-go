@@ -1,9 +1,7 @@
 <section class="space-y-4 sm:space-y-5">
   <!--
-    Live status: hero, power flow, vehicle, health and the override controls.
-    Polled by htmx every 5s; the whole block is re-rendered so every live value
-    (including the active-override highlight) stays in sync. The override form
-    lives inside the partial and targets this same #status container.
+    Live status: hero, power flow, vehicle, health. Polled every 5s; read-only so
+    user input is never discarded by the poll.
   -->
   <div id="status"
        hx-get="/partials/status"
@@ -11,6 +9,21 @@
        hx-swap="innerHTML"
        hx-sync="this:replace">
     {{template "partials/status" .Status}}
+  </div>
+
+  <!--
+    Operator controls: charge-power toggle and override form. Polled slowly (60s)
+    to pick up state changes from other sessions or restarts; actions (form submit,
+    charge-power click) also refresh this block immediately via hx-target="#controls".
+    The slow cadence means the 5s status poll never resets the user's in-progress
+    input.
+  -->
+  <div id="controls"
+       hx-get="/partials/controls"
+       hx-trigger="every 60s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/controls" .Status}}
   </div>
 
   <!--

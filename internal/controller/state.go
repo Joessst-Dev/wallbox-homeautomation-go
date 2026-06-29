@@ -54,9 +54,13 @@ type ControlState struct {
 	Override      Override
 	OverrideUntil time.Time
 	// CapBypass, meaningful only for a ForceOn override, lifts the evcc limitSoc
-	// backstop from SoCCap to SoCMax so the user can deliberately charge past the
-	// cap. It expires together with the override.
+	// backstop from SoCCap to the operator-chosen target so the user can deliberately
+	// charge past the cap. It expires together with the override.
 	CapBypass bool
+	// CapBypassSoC is the target SoC percentage for cap-bypass charging (1–100).
+	// When 0, LimitSoCTarget falls back to cfg.SoCMax. Clamped to [SoCCap+1, SoCMax]
+	// by LimitSoCTarget.
+	CapBypassSoC int
 	// ChargePower is the effective evcc charge mode used whenever charging is
 	// enabled (config.EnableModePV or config.EnableModeNow). It is a persistent,
 	// global operator setting, not tied to the override.
@@ -84,6 +88,9 @@ type Inputs struct {
 	OverrideUntil   time.Time // zero value = no expiry
 	// OverrideCapBypass lifts the SoC cap while a ForceOn override is active.
 	OverrideCapBypass bool
+	// OverrideCapBypassSoC is the operator-chosen target SoC for cap-bypass charging.
+	// When 0, LimitSoCTarget falls back to cfg.SoCMax.
+	OverrideCapBypassSoC int
 	// ChargePower is the effective evcc charge mode (pv|now) when charging is on.
 	ChargePower string
 }

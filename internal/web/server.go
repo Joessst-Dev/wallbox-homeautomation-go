@@ -27,7 +27,7 @@ import (
 // Controller is the subset of *controller.Controller the web layer needs.
 type Controller interface {
 	Status() controller.StatusView
-	SetOverride(mode controller.Override, until time.Time, capBypass bool)
+	SetOverride(mode controller.Override, until time.Time, capBypass bool, capBypassSoC int)
 	SetChargePower(mode string) error
 }
 
@@ -119,6 +119,7 @@ func (s *Server) registerRoutes() {
 	// HTML pages and htmx partials.
 	app.Get("/", s.handleDashboard)
 	app.Get("/partials/status", s.handleStatusPartial)
+	app.Get("/partials/controls", s.handleControlsPartial)
 	app.Get("/partials/sessions", s.handleSessionsPartial)
 	app.Get("/partials/update", s.handleUpdatePartial)
 
