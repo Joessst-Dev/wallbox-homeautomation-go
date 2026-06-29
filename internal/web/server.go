@@ -112,6 +112,13 @@ func (s *Server) registerRoutes() {
 		Root: http.FS(staticFS),
 	}))
 
+	// Browsers (and some tools) request /favicon.ico directly regardless of the
+	// <link rel="icon"> tag; redirect them to the embedded SVG so it resolves
+	// instead of 404ing.
+	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
+		return c.Redirect("/static/favicon.svg", fiber.StatusFound)
+	})
+
 	// Health probes.
 	app.Get("/healthz", s.handleHealthz)
 	app.Get("/readyz", s.handleReadyz)

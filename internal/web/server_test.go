@@ -498,5 +498,24 @@ var _ = Describe("Web Server", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/static/app.css", nil))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
+
+		It("serves the embedded SVG favicon", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/static/favicon.svg", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("image/svg+xml"))
+		})
+	})
+
+	Describe("favicon", func() {
+		It("links the SVG favicon from the dashboard head", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/", nil))
+			Expect(bodyString(resp)).To(ContainSubstring(`<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">`))
+		})
+
+		It("redirects /favicon.ico to the SVG", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusFound))
+			Expect(resp.Header.Get("Location")).To(Equal("/static/favicon.svg"))
+		})
 	})
 })
