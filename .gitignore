@@ -18,6 +18,10 @@ evcc.yaml
 internal/web/tailwind/tailwindcss
 node_modules/
 
+# VitePress build output and cache (docs only)
+docs/.vitepress/dist
+docs/.vitepress/cache
+
 # OS / editor
 .DS_Store
 *.swp
