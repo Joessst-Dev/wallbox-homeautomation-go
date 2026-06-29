@@ -4,7 +4,10 @@
 # Tiny prep stage just to materialize a /data dir owned by the nonroot user, so
 # the named volume inherits nonroot ownership on first mount (otherwise it is
 # root-owned and the nonroot process cannot create /data/wha.db).
-FROM busybox:1.36 AS prep
+# --platform=$BUILDPLATFORM keeps this stage on the runner's native arch so its
+# RUN executes without QEMU (release.yml deliberately has no setup-qemu-action).
+# The COPY --from=prep below is just an empty owned dir, so it's platform-agnostic.
+FROM --platform=$BUILDPLATFORM busybox:1.36 AS prep
 RUN mkdir -p /data
 
 FROM gcr.io/distroless/static-debian12:nonroot
