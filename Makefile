@@ -1,4 +1,4 @@
-.PHONY: help css build test vet lint tidy run docker-build compose-up compose-local clean
+.PHONY: help css build test vet lint tidy run docker-build compose-up compose-local install clean
 
 TAILWIND := internal/web/tailwind/tailwindcss
 APP_CSS  := internal/web/static/app.css
@@ -39,6 +39,9 @@ compose-up: ## Run the stack with the published GHCR image (Pi/prod)
 
 compose-local: ## Run the stack building wha from source (local dev)
 	docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+
+install: ## Guided Raspberry Pi setup (prompts for creds, secures broker, starts stack)
+	bash scripts/install.sh
 
 clean: ## Remove build artifacts
 	rm -rf bin/ *.db *.db-wal *.db-shm

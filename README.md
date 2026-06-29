@@ -99,7 +99,25 @@ See [docs/mqtt.md](docs/mqtt.md) for the exact evcc MQTT topic contract and
 
 ## Run
 
-### Docker Compose (Raspberry Pi)
+### Quick install (Raspberry Pi)
+
+One command sets up the whole stack — checks Docker, lets you pick the `wha`
+version, prompts for your Sungrow/Easee/Renault credentials, generates a
+secured Mosquitto broker (auth + ACL), and starts everything:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Joessst-Dev/wallbox-homeautomation-go/main/scripts/install.sh | bash
+```
+
+It installs into `~/wha` (override with `WHA_DIR`). To preview the generated
+config without starting anything, pass `--dry-run`; to skip the version prompt,
+set `WHA_IMAGE_TAG=latest`. From a cloned repo you can also run `make install`.
+The manual path below is the equivalent done by hand.
+
+- wha dashboard: `http://<pi>:8080`
+- evcc UI: `http://<pi>:7070`
+
+### Docker Compose (manual)
 
 `docker-compose.yml` pulls the published multi-arch image
 (`ghcr.io/joessst-dev/wha:edge`, public on GHCR) — no local build needed:
@@ -109,9 +127,6 @@ cp evcc.example.yaml evcc.yaml      # fill in Sungrow IP, Easee + Renault creds
 # (optional) tune thresholds in config.yaml
 docker compose up -d                # or: make compose-up
 ```
-
-- wha dashboard: `http://<pi>:8080`
-- evcc UI: `http://<pi>:7070`
 
 Check it came up cleanly:
 
