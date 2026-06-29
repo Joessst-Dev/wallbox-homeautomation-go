@@ -3,6 +3,11 @@ name: Docker (main)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "**.md"
+      - ".claude/**"
+      - ".gitignore"
+      - "LICENSE"
 
 concurrency:
   group: docker-${{ github.ref }}
