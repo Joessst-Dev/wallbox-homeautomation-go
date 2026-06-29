@@ -40,7 +40,7 @@ var _ = Describe("InputsFromSnapshot", func() {
 	}
 
 	It("is ready and not stale when required metrics are present and power is fresh", func() {
-		in := controller.InputsFromSnapshot(now, fullSnap(), cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, fullSnap(), cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(in.Ready).To(BeTrue())
 		Expect(in.Stale).To(BeFalse())
 		Expect(in.Connected).To(BeTrue())
@@ -50,7 +50,7 @@ var _ = Describe("InputsFromSnapshot", func() {
 	It("treats a 3-hour-old vehicleSoc as valid (NOT stale)", func() {
 		s := fullSnap()
 		s.VehicleSoC.At = now.Add(-3 * time.Hour) // far beyond StaleTimeout, within SoC policy
-		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(in.Stale).To(BeFalse(), "old vehicleSoc must not trip fail-safe")
 		Expect(in.Ready).To(BeTrue())
 	})
@@ -58,38 +58,38 @@ var _ = Describe("InputsFromSnapshot", func() {
 	It("is stale when grid power is older than StaleTimeout", func() {
 		s := fullSnap()
 		s.Grid.At = now.Add(-2 * time.Minute)
-		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(in.Stale).To(BeTrue())
 	})
 
 	It("is stale when the broker is disconnected", func() {
 		s := fullSnap()
 		s.BrokerConnected = false
-		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(in.Stale).To(BeTrue())
 	})
 
 	It("is stale when evcc reports offline via LWT", func() {
 		s := fullSnap()
 		s.Online = evcc.BoolMetric{Value: false, At: now, Seen: true}
-		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(in.Stale).To(BeTrue())
 	})
 
 	It("is not ready until vehicleSoc and connected have been seen at least once", func() {
 		s := fullSnap()
 		s.VehicleSoC.Seen = false
-		Expect(controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{}).Ready).To(BeFalse())
+		Expect(controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto}).Ready).To(BeFalse())
 
 		s = fullSnap()
 		s.Connected.Seen = false
-		Expect(controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{}).Ready).To(BeFalse())
+		Expect(controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto}).Ready).To(BeFalse())
 	})
 
 	It("preserves a genuine 0% SoC and marks it known", func() {
 		s := fullSnap()
 		s.VehicleSoC = evcc.FloatMetric{Value: 0, At: now, Seen: true}
-		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(in.VehicleSoC).To(Equal(0))
 		Expect(in.VehicleSoCKnown).To(BeTrue())
 		Expect(in.Ready).To(BeTrue())
@@ -98,13 +98,13 @@ var _ = Describe("InputsFromSnapshot", func() {
 	It("marks VehicleSoCKnown false when SoC was never seen", func() {
 		s := fullSnap()
 		s.VehicleSoC.Seen = false
-		in := controller.InputsFromSnapshot(now, s, cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(in.VehicleSoCKnown).To(BeFalse())
 	})
 
 	It("computes surplus from the mapped inputs", func() {
 		// export 3000W, car drawing 0 → surplus 3000
-		in := controller.InputsFromSnapshot(now, fullSnap(), cfg, controller.OverrideAuto, time.Time{})
+		in := controller.InputsFromSnapshot(now, fullSnap(), cfg, controller.ControlState{Override: controller.OverrideAuto})
 		Expect(controller.Surplus(in)).To(Equal(3000.0))
 	})
 })

@@ -3,6 +3,7 @@ package web_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -25,17 +26,29 @@ import (
 type fakeController struct {
 	status controller.StatusView
 
-	overrideCalled bool
-	overrideMode   controller.Override
-	overrideUntil  time.Time
+	overrideCalled    bool
+	overrideMode      controller.Override
+	overrideUntil     time.Time
+	overrideCapBypass bool
+
+	chargePowerCalled bool
+	chargePowerMode   string
+	chargePowerErr    error
 }
 
 func (f *fakeController) Status() controller.StatusView { return f.status }
 
-func (f *fakeController) SetOverride(mode controller.Override, until time.Time) {
+func (f *fakeController) SetOverride(mode controller.Override, until time.Time, capBypass bool) {
 	f.overrideCalled = true
 	f.overrideMode = mode
 	f.overrideUntil = until
+	f.overrideCapBypass = capBypass
+}
+
+func (f *fakeController) SetChargePower(mode string) error {
+	f.chargePowerCalled = true
+	f.chargePowerMode = mode
+	return f.chargePowerErr
 }
 
 // fakeUpdater is a deterministic stand-in for *updater.Updater. It records the
@@ -137,6 +150,9 @@ var _ = Describe("Web Server", func() {
 				DesiredMode: config.EnableModePV,
 				Reason:      "surplus sufficient",
 				Override:    controller.OverrideAuto,
+				ChargePower: config.EnableModePV,
+				SoCCap:      80,
+				SoCMax:      100,
 				Surplus:     2500,
 				Inputs: controller.Inputs{
 					GridW: -2500, PVW: 5000, HomeW: 1200, BatteryW: -300, ChargeW: 3100,
@@ -280,6 +296,67 @@ var _ = Describe("Web Server", func() {
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 				Expect(ctrl.overrideCalled).To(BeFalse())
 			})
+		})
+
+		Context("with capBypass on a force-on", func() {
+			It("forwards capBypass=true", func() {
+				req := httptest.NewRequest(http.MethodPost, "/api/override",
+					strings.NewReader("mode=on&capBypass=true"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+				doRequest(srv, req)
+				Expect(ctrl.overrideMode).To(Equal(controller.OverrideForceOn))
+				Expect(ctrl.overrideCapBypass).To(BeTrue())
+			})
+		})
+
+		Context("with capBypass on a non-force-on mode", func() {
+			It("ignores capBypass (forced false)", func() {
+				req := httptest.NewRequest(http.MethodPost, "/api/override",
+					strings.NewReader("mode=off&capBypass=true"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+				doRequest(srv, req)
+				Expect(ctrl.overrideMode).To(Equal(controller.OverrideForceOff))
+				Expect(ctrl.overrideCapBypass).To(BeFalse())
+			})
+		})
+	})
+
+	Describe("POST /api/charge-power", func() {
+		It("sets the mode and returns JSON ok without htmx", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
+				strings.NewReader("power=now"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.chargePowerCalled).To(BeTrue())
+			Expect(ctrl.chargePowerMode).To(Equal("now"))
+			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
+		})
+
+		It("returns the refreshed status partial for htmx requests", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
+				strings.NewReader("power=pv"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("HX-Request", "true")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Charge power"))
+		})
+
+		It("returns 400 when the controller rejects the mode", func() {
+			ctrl.chargePowerErr = fmt.Errorf("invalid charge power mode")
+			req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
+				strings.NewReader("power=bogus"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 		})
 	})
 

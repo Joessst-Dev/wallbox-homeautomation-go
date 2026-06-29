@@ -78,8 +78,9 @@ func (s *Server) handleAPIStatus(c *fiber.Ctx) error {
 
 // overrideRequest is the accepted body for POST /api/override (JSON or form).
 type overrideRequest struct {
-	Mode  string  `json:"mode" form:"mode"`
-	Hours float64 `json:"hours" form:"hours"`
+	Mode      string  `json:"mode" form:"mode"`
+	Hours     float64 `json:"hours" form:"hours"`
+	CapBypass bool    `json:"capBypass" form:"capBypass"`
 }
 
 // handleAPIOverride sets the manual override. It accepts both form-encoded and
@@ -101,8 +102,33 @@ func (s *Server) handleAPIOverride(c *fiber.Ctx) error {
 		until = s.now().Add(time.Duration(req.Hours * float64(time.Hour)))
 	}
 
-	s.ctrl.SetOverride(mode, until)
+	// CapBypass (charge past the SoC cap) only applies to a force-on override; the
+	// controller ignores it for other modes, but constrain it here too for clarity.
+	capBypass := req.CapBypass && mode == controller.OverrideForceOn
+	s.ctrl.SetOverride(mode, until, capBypass)
 
+	if c.Get("HX-Request") != "" {
+		return s.renderStatusPartial(c)
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// chargePowerRequest is the accepted body for POST /api/charge-power.
+type chargePowerRequest struct {
+	Power string `json:"power" form:"power"`
+}
+
+// handleChargePower sets the persistent charge-power mode (pv|now) used whenever
+// charging is enabled. For htmx requests it returns the refreshed status partial;
+// otherwise {"ok":true}.
+func (s *Server) handleChargePower(c *fiber.Ctx) error {
+	var req chargePowerRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid charge-power body")
+	}
+	if err := s.ctrl.SetChargePower(req.Power); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
 	if c.Get("HX-Request") != "" {
 		return s.renderStatusPartial(c)
 	}

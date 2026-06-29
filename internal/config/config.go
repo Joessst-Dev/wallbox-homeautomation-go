@@ -113,6 +113,11 @@ type Control struct {
 	SoCCap         int `mapstructure:"socCap"`
 	SoCResumeBelow int `mapstructure:"socResumeBelow"`
 
+	// SoCMax is the ceiling used when an operator explicitly opts to charge past
+	// SoCCap (the Charge-now "charge past the cap" option). The evcc limitSoc
+	// backstop is lifted to this value only while such an override is active.
+	SoCMax int `mapstructure:"socMax"`
+
 	DecisionInterval time.Duration `mapstructure:"decisionInterval"`
 
 	// StaleTimeout applies to the fast-moving power metrics (grid/pv/battery/
@@ -186,6 +191,7 @@ func Default() Config {
 			StopDwell:         3 * time.Minute, // matches evcc's own disableDelay
 			SoCCap:            80,
 			SoCResumeBelow:    78,
+			SoCMax:            100,
 			DecisionInterval:  15 * time.Second,
 			StaleTimeout:      60 * time.Second,
 			Republish:         5 * time.Minute,
@@ -236,6 +242,10 @@ func (c Config) Validate() error {
 	if c.Control.SoCResumeBelow >= c.Control.SoCCap {
 		return fmt.Errorf("control.socResumeBelow (%d) must be less than socCap (%d)",
 			c.Control.SoCResumeBelow, c.Control.SoCCap)
+	}
+	if c.Control.SoCMax <= c.Control.SoCCap || c.Control.SoCMax > 100 {
+		return fmt.Errorf("control.socMax (%d) must be greater than socCap (%d) and at most 100",
+			c.Control.SoCMax, c.Control.SoCCap)
 	}
 	if c.Control.DecisionInterval <= 0 {
 		return fmt.Errorf("control.decisionInterval must be positive")

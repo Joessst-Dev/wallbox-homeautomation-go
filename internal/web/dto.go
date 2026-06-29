@@ -5,6 +5,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/config"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/controller"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/store"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/updater"
@@ -25,6 +26,16 @@ type StatusVM struct {
 	OverrideUntil string `json:"overrideUntil,omitempty"`
 	// OverrideActive is true when the override is anything other than auto.
 	OverrideActive bool `json:"overrideActive"`
+	// CapBypass is true when a force-on override is charging past the SoC cap.
+	CapBypass bool `json:"capBypass"`
+
+	// ChargePower is the runtime charge-power mode ("pv"|"now"); ChargePowerNow is
+	// the same value pre-reduced for the template.
+	ChargePower    string `json:"chargePower"`
+	ChargePowerNow bool   `json:"chargePowerNow"`
+	// SoCCap/SoCMax are surfaced so the template can label the cap-bypass control.
+	SoCCap int `json:"socCap"`
+	SoCMax int `json:"socMax"`
 
 	SurplusW  int    `json:"surplusW"`
 	SurplusKW string `json:"surplusKW"`
@@ -70,6 +81,12 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 		Override:    string(v.Override),
 
 		OverrideActive: v.Override != controller.OverrideAuto,
+		CapBypass:      v.CapBypass,
+
+		ChargePower:    v.ChargePower,
+		ChargePowerNow: v.ChargePower == config.EnableModeNow,
+		SoCCap:         v.SoCCap,
+		SoCMax:         v.SoCMax,
 
 		SurplusW:  watts(v.Surplus),
 		SurplusKW: kw(v.Surplus),

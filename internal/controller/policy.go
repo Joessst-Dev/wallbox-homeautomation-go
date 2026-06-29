@@ -20,9 +20,24 @@ func Surplus(in Inputs) float64 {
 	return in.ChargeW - in.GridW - batteryDischarge
 }
 
-// enableMode returns the evcc mode used when charging is enabled.
-func enableMode(cfg config.Control) string {
+// effectiveMode returns the evcc mode used when charging is enabled: the
+// operator's runtime charge-power setting (pv|now), falling back to the
+// configured default when unset.
+func effectiveMode(in Inputs, cfg config.Control) string {
+	if in.ChargePower != "" {
+		return in.ChargePower
+	}
 	return cfg.EnableMode
+}
+
+// LimitSoCTarget is the SoC limit wha asks evcc to enforce as its dead-man
+// backstop. It is the configured cap, lifted to SoCMax only while an explicit
+// "charge past the cap" ForceOn override is active.
+func LimitSoCTarget(now time.Time, in Inputs, cfg config.Control) int {
+	if in.Override == OverrideForceOn && in.OverrideCapBypass && overrideActive(now, in) {
+		return cfg.SoCMax
+	}
+	return cfg.SoCCap
 }
 
 // resetTimers returns Timers with both dwell markers cleared.
@@ -72,7 +87,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 			return Decision{
 				State:       StateCharging,
 				Timers:      resetTimers(),
-				DesiredMode: enableMode(cfg),
+				DesiredMode: effectiveMode(in, cfg),
 				Reason:      "manual override: on",
 			}
 		}
@@ -120,7 +135,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 
 	// 6. Surplus hysteresis + dwell (the normal path).
 	s := Surplus(in)
-	enable := enableMode(cfg)
+	enable := effectiveMode(in, cfg)
 
 	charging := st == StateCharging || st == StateStopPending
 	if charging {

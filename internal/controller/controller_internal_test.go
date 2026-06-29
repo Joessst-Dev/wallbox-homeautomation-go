@@ -22,6 +22,7 @@ type fakeCommander struct {
 	mu         sync.Mutex
 	modes      []string
 	limitCalls int
+	limits     []int
 	failLimit  bool
 }
 
@@ -32,14 +33,24 @@ func (f *fakeCommander) SetMode(mode string) error {
 	return nil
 }
 
-func (f *fakeCommander) SetLimitSoC(int) error {
+func (f *fakeCommander) SetLimitSoC(pct int) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.limitCalls++
 	if f.failLimit {
 		return errFake
 	}
+	f.limits = append(f.limits, pct)
 	return nil
+}
+
+func (f *fakeCommander) lastLimit() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.limits) == 0 {
+		return -1
+	}
+	return f.limits[len(f.limits)-1]
 }
 
 func (f *fakeCommander) limitCount() int {
@@ -89,6 +100,8 @@ type fakeRecorder struct {
 	pruneSamplesCalls int
 	pruneEventsCalls  int
 	lastPruneBefore   time.Time
+
+	settings map[string]string
 }
 
 func (r *fakeRecorder) InsertEvent(_ context.Context, e store.Event) error {
@@ -164,6 +177,23 @@ func (r *fakeRecorder) PruneEvents(_ context.Context, before time.Time) (int64, 
 	r.pruneEventsCalls++
 	r.lastPruneBefore = before
 	return 0, nil
+}
+
+func (r *fakeRecorder) GetSetting(_ context.Context, key string) (string, bool, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	v, ok := r.settings[key]
+	return v, ok, nil
+}
+
+func (r *fakeRecorder) SetSetting(_ context.Context, key, value string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.settings == nil {
+		r.settings = map[string]string{}
+	}
+	r.settings[key] = value
+	return nil
 }
 
 func (r *fakeRecorder) updateCount() int {
@@ -323,6 +353,54 @@ var _ = Describe("Controller.tick side effects", func() {
 			ctrl.tick(ctx, clk.Now())
 			Expect(cmd.limitCount()).To(Equal(2))
 		})
+
+		It("lifts to SoCMax for a cap-bypass force-on and restores the cap when it clears", func() {
+			snaps.set(healthySnap(t0))
+			ctrl.tick(ctx, clk.Now())
+			Expect(cmd.lastLimit()).To(Equal(cfg.SoCCap)) // normal backstop
+
+			// Operator forces on and opts to charge past the cap.
+			ctrl.SetOverride(OverrideForceOn, time.Time{}, true)
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(healthySnap(clk.Now()))
+			ctrl.tick(ctx, clk.Now())
+			Expect(cmd.lastLimit()).To(Equal(cfg.SoCMax)) // lifted, republished on change
+
+			// Back to auto: the cap is restored immediately (target change), not only
+			// after the republish cadence.
+			ctrl.SetOverride(OverrideAuto, time.Time{}, false)
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(healthySnap(clk.Now()))
+			ctrl.tick(ctx, clk.Now())
+			Expect(cmd.lastLimit()).To(Equal(cfg.SoCCap))
+		})
+	})
+
+	Describe("charge power", func() {
+		It("defaults to the configured enable mode", func() {
+			Expect(ctrl.Status().ChargePower).To(Equal(cfg.EnableMode))
+		})
+
+		It("SetChargePower validates, updates Status, and persists", func() {
+			Expect(ctrl.SetChargePower("bogus")).NotTo(Succeed())
+
+			Expect(ctrl.SetChargePower(config.EnableModeNow)).To(Succeed())
+			Expect(ctrl.Status().ChargePower).To(Equal(config.EnableModeNow))
+
+			v, ok, err := rec.GetSetting(ctx, "charge_power")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+			Expect(v).To(Equal(config.EnableModeNow))
+		})
+
+		It("restores the persisted mode at startup via loadChargePower", func() {
+			rec.settings = map[string]string{"charge_power": config.EnableModeNow}
+			fresh := New(cfg, cmd, snaps, rec, clk, discardLogger())
+			Expect(fresh.Status().ChargePower).To(Equal(cfg.EnableMode)) // not loaded yet
+
+			fresh.loadChargePower(ctx)
+			Expect(fresh.Status().ChargePower).To(Equal(config.EnableModeNow))
+		})
 	})
 
 	Describe("mode publishing", func() {
@@ -399,7 +477,7 @@ var _ = Describe("Controller.tick side effects", func() {
 	Describe("override auto-expiry (TOCTOU)", func() {
 		It("resets to Auto when an expiring override lapses", func() {
 			snaps.set(healthySnap(t0))
-			ctrl.SetOverride(OverrideForceOff, t0.Add(time.Minute))
+			ctrl.SetOverride(OverrideForceOff, t0.Add(time.Minute), false)
 			ctrl.tick(ctx, clk.Now())
 			Expect(ctrl.Status().Override).To(Equal(OverrideForceOff))
 
@@ -415,9 +493,9 @@ var _ = Describe("Controller.tick side effects", func() {
 			// manual override must always win. The only way the final value could be
 			// Auto is the TOCTOU bug; the guard makes the outcome deterministic.
 			snaps.set(healthySnap(t0))
-			for i := 0; i < 300; i++ {
+			for i := range 300 {
 				// Seed an already-expired ForceOn that a buggy tick would clear.
-				ctrl.SetOverride(OverrideForceOn, t0.Add(-time.Minute))
+				ctrl.SetOverride(OverrideForceOn, t0.Add(-time.Minute), false)
 
 				var wg sync.WaitGroup
 				wg.Add(2)
@@ -427,7 +505,7 @@ var _ = Describe("Controller.tick side effects", func() {
 				}()
 				go func() {
 					defer wg.Done()
-					ctrl.SetOverride(OverrideForceOff, time.Time{}) // the winner
+					ctrl.SetOverride(OverrideForceOff, time.Time{}, false) // the winner
 				}()
 				wg.Wait()
 
