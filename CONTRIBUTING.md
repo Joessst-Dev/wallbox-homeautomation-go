@@ -3,6 +3,10 @@
 Thanks for working on **wha**. This is a small, safety-relevant Go service; the bar is
 "correct, tested, and boring to operate."
 
+> **Deploying, not developing?** If you want to run wha on a Raspberry Pi rather than
+> contribute to the code, the one-command installer in [docs/install.md](docs/install.md)
+> is the faster path.
+
 ## Prerequisites
 
 - Go 1.25+ (the module pins the version in `go.mod`).
@@ -58,3 +62,5 @@ temp SQLite DB and an embedded Fiber app — no network required.
 
 Keep `README.md` and `CLAUDE.md` in sync with behavior changes (new config keys, new
 invariants). Update [docs/mqtt.md](docs/mqtt.md) if the evcc topic contract changes.
+If you change `scripts/install.sh`, update [docs/install.md](docs/install.md) to match —
+the two document the same flow from different perspectives (user guide vs. script source).

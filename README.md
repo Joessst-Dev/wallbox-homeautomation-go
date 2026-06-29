@@ -114,6 +114,10 @@ config without starting anything, pass `--dry-run`; to skip the version prompt,
 set `WHA_IMAGE_TAG=latest`. From a cloned repo you can also run `make install`.
 The manual path below is the equivalent done by hand.
 
+For the full walkthrough — what the script does step by step, all env overrides,
+generated files, re-run behaviour, version model, and troubleshooting — see
+**[docs/install.md](docs/install.md)**.
+
 - wha dashboard: `http://<pi>:8080`
 - evcc UI: `http://<pi>:7070`
 
@@ -220,9 +224,13 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
 ## ⚠️ Security
 
 evcc does **not** authenticate MQTT set-topics — anyone who can publish to the broker can
-control your charging. Lock down Mosquitto (`mosquitto/config/mosquitto.conf`) with
-credentials + ACLs (restricting `wha` to `evcc/loadpoints/<id>/.../set`) before exposing
-anything, and keep the broker on your home network.
+control your charging. The one-command installer (`scripts/install.sh`) secures Mosquitto
+automatically: it generates a random credential, hashes it with `mosquitto_passwd`, and
+writes an ACL that restricts the `wha` user to `evcc/#`. If you configure the stack by
+hand, add credentials + ACLs to `mosquitto/config/mosquitto.conf` before exposing
+anything, and keep the broker on your home network. See
+[docs/install.md — Security](docs/install.md#security) for details on the credential
+model and a possible finer two-user hardening split.
 
 ## Troubleshooting
 
@@ -242,6 +250,8 @@ anything, and keep the broker on your home network.
   interval; the evcc `limitSoc` backstop bounds it.
 - **Brief grid draw in `pv` mode.** There's an unavoidable minimum charge power
   (~1.4 kW single-phase), so a little grid import can occur as surplus dips before evcc pauses.
+- **Installer issues.** See [docs/install.md — Troubleshooting](docs/install.md#troubleshooting)
+  for installer-specific problems (missing terminal, Docker daemon, checkconfig errors).
 
 ## CI/CD
 
