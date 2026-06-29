@@ -16,6 +16,7 @@ import (
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/controller"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/evcc"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/store"
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/updater"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/web"
 )
 
@@ -35,6 +36,32 @@ func (f *fakeController) SetOverride(mode controller.Override, until time.Time) 
 	f.overrideCalled = true
 	f.overrideMode = mode
 	f.overrideUntil = until
+}
+
+// fakeUpdater is a deterministic stand-in for *updater.Updater. It records the
+// last Trigger call and the number of Check calls so specs can assert on them.
+type fakeUpdater struct {
+	info updater.Info
+
+	checkCalls int
+	checkErr   error
+
+	triggerCalled  bool
+	triggerVersion string
+	triggerErr     error
+}
+
+func (f *fakeUpdater) Info(context.Context) updater.Info { return f.info }
+
+func (f *fakeUpdater) Check(context.Context) (updater.Info, error) {
+	f.checkCalls++
+	return f.info, f.checkErr
+}
+
+func (f *fakeUpdater) Trigger(_ context.Context, version string) error {
+	f.triggerCalled = true
+	f.triggerVersion = version
+	return f.triggerErr
 }
 
 // fakeStore is an in-memory stand-in for *store.Store.
@@ -99,6 +126,7 @@ var _ = Describe("Web Server", func() {
 	var (
 		ctrl *fakeController
 		st   *fakeStore
+		upd  *fakeUpdater
 		srv  *web.Server
 	)
 
@@ -123,7 +151,16 @@ var _ = Describe("Web Server", func() {
 			},
 		}
 		st = &fakeStore{}
-		srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0}, ctrl, st, nil)
+		upd = &fakeUpdater{
+			info: updater.Info{
+				Enabled:         true,
+				Current:         "1.2.3",
+				Latest:          "1.3.0",
+				UpdateAvailable: true,
+				CheckedAt:       time.Now().Add(-time.Minute),
+			},
+		}
+		srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0}, ctrl, st, upd, nil)
 	})
 
 	Describe("GET /healthz", func() {
@@ -242,6 +279,81 @@ var _ = Describe("Web Server", func() {
 				resp := doRequest(srv, req)
 				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 				Expect(ctrl.overrideCalled).To(BeFalse())
+			})
+		})
+	})
+
+	Describe("GET /partials/update", func() {
+		It("renders the update fragment with the current and latest versions", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/update", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("1.2.3"))
+			Expect(body).To(ContainSubstring("1.3.0"))
+		})
+	})
+
+	Describe("POST /api/update/check", func() {
+		It("re-checks and returns the partial for htmx requests", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/update/check", nil)
+			req.Header.Set("HX-Request", "true")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(upd.checkCalls).To(Equal(1))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("1.3.0"))
+		})
+
+		It("returns JSON when not an htmx request", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodPost, "/api/update/check", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			var vm map[string]any
+			Expect(json.Unmarshal([]byte(bodyString(resp)), &vm)).To(Succeed())
+			Expect(vm["latest"]).To(Equal("1.3.0"))
+			Expect(vm["updateAvailable"]).To(BeTrue())
+		})
+	})
+
+	Describe("POST /api/update/apply", func() {
+		Context("with the latest version", func() {
+			It("triggers the update and returns JSON ok", func() {
+				req := httptest.NewRequest(http.MethodPost, "/api/update/apply",
+					strings.NewReader("version=1.3.0"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+				resp := doRequest(srv, req)
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				Expect(upd.triggerCalled).To(BeTrue())
+				Expect(upd.triggerVersion).To(Equal("1.3.0"))
+				Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
+			})
+		})
+
+		Context("with a version other than the latest", func() {
+			It("returns 400 and does not trigger", func() {
+				req := httptest.NewRequest(http.MethodPost, "/api/update/apply",
+					strings.NewReader("version=9.9.9"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+				resp := doRequest(srv, req)
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+				Expect(upd.triggerCalled).To(BeFalse())
+			})
+		})
+
+		Context("when updates are disabled", func() {
+			It("returns 400", func() {
+				upd.info.Enabled = false
+				req := httptest.NewRequest(http.MethodPost, "/api/update/apply",
+					strings.NewReader("version=1.3.0"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+				resp := doRequest(srv, req)
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+				Expect(upd.triggerCalled).To(BeFalse())
 			})
 		})
 	})

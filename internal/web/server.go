@@ -21,6 +21,7 @@ import (
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/config"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/controller"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/store"
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/updater"
 )
 
 // Controller is the subset of *controller.Controller the web layer needs.
@@ -36,19 +37,28 @@ type Store interface {
 	Samples(ctx context.Context, from, to time.Time) ([]store.Sample, error)
 }
 
+// Updater is the subset of *updater.Updater the web layer needs: read the
+// current update state, force a GHCR re-check, and request an upgrade.
+type Updater interface {
+	Info(ctx context.Context) updater.Info
+	Check(ctx context.Context) (updater.Info, error)
+	Trigger(ctx context.Context, version string) error
+}
+
 // Server owns the Fiber app and the dependencies its handlers close over.
 type Server struct {
 	cfg  config.Web
 	app  *fiber.App
 	ctrl Controller
 	st   Store
+	upd  Updater
 	log  *slog.Logger
 	now  func() time.Time
 }
 
 // New builds a Server with the embedded template engine, middleware, and routes
 // wired up. It does not start listening; call Start for that.
-func New(cfg config.Web, ctrl Controller, st Store, log *slog.Logger) *Server {
+func New(cfg config.Web, ctrl Controller, st Store, upd Updater, log *slog.Logger) *Server {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -57,6 +67,7 @@ func New(cfg config.Web, ctrl Controller, st Store, log *slog.Logger) *Server {
 		cfg:  cfg,
 		ctrl: ctrl,
 		st:   st,
+		upd:  upd,
 		log:  log,
 		now:  time.Now,
 	}
@@ -108,6 +119,7 @@ func (s *Server) registerRoutes() {
 	app.Get("/", s.handleDashboard)
 	app.Get("/partials/status", s.handleStatusPartial)
 	app.Get("/partials/sessions", s.handleSessionsPartial)
+	app.Get("/partials/update", s.handleUpdatePartial)
 
 	// JSON + form API.
 	api := app.Group("/api")
@@ -116,6 +128,8 @@ func (s *Server) registerRoutes() {
 	api.Get("/sessions", s.handleAPISessions)
 	api.Get("/events", s.handleAPIEvents)
 	api.Get("/history", s.handleAPIHistory)
+	api.Post("/update/check", s.handleUpdateCheck)
+	api.Post("/update/apply", s.handleUpdateApply)
 }
 
 // Start binds and serves on BindAddr:Port. It blocks until the server is shut

@@ -77,6 +77,7 @@ type Config struct {
 	Web     Web     `mapstructure:"web"`
 	DB      DB      `mapstructure:"db"`
 	Log     Log     `mapstructure:"log"`
+	Update  Update  `mapstructure:"update"`
 }
 
 // MQTT holds the connection settings for the Mosquitto broker that evcc
@@ -146,6 +147,19 @@ type Log struct {
 	Level string `mapstructure:"level"`
 }
 
+// Update holds the in-UI software-update settings. wha itself never touches the
+// Docker socket: when enabled it checks GHCR for a newer release and hands the
+// chosen version to the compose-aware "wha-updater" sidecar through a request
+// file in RequestDir (a shared volume), reading the sidecar's progress back from
+// status.json in the same directory. Disabled by default — it only works when
+// the sidecar is deployed.
+type Update struct {
+	Enabled    bool          `mapstructure:"enabled"`
+	Repository string        `mapstructure:"repository"`
+	RequestDir string        `mapstructure:"requestDir"`
+	CheckTTL   time.Duration `mapstructure:"checkTTL"`
+}
+
 // Charge-enable modes published to evcc.
 const (
 	EnableModePV  = "pv"
@@ -187,6 +201,12 @@ func Default() Config {
 		},
 		Log: Log{
 			Level: "info",
+		},
+		Update: Update{
+			Enabled:    false,
+			Repository: "joessst-dev/wha",
+			RequestDir: "/run/update",
+			CheckTTL:   1 * time.Hour,
 		},
 	}
 }
@@ -242,6 +262,17 @@ func (c Config) Validate() error {
 	}
 	if c.DB.Path == "" {
 		return fmt.Errorf("db.path must not be empty")
+	}
+	if c.Update.Enabled {
+		if c.Update.Repository == "" {
+			return fmt.Errorf("update.repository must not be empty when update.enabled is true")
+		}
+		if c.Update.RequestDir == "" {
+			return fmt.Errorf("update.requestDir must not be empty when update.enabled is true")
+		}
+		if c.Update.CheckTTL < 0 {
+			return fmt.Errorf("update.checkTTL must not be negative")
+		}
 	}
 	return nil
 }

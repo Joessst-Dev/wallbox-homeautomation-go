@@ -19,12 +19,21 @@ import (
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/controller"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/evcc"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/store"
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/updater"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/web"
 )
 
+// BuildInfo carries the ldflags-injected build identity from main into the
+// components that surface it (the web dashboard and the updater's version check).
+type BuildInfo struct {
+	Version string
+	Commit  string
+	Date    string
+}
+
 // Run starts all components and blocks until the process is signaled or a
 // component fails.
-func Run(ctx context.Context, cfg config.Config) error {
+func Run(ctx context.Context, cfg config.Config, build BuildInfo) error {
 	log := newLogger(cfg.Log.Level)
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
@@ -39,9 +48,24 @@ func Run(ctx context.Context, cfg config.Config) error {
 
 	client := evcc.NewClient(cfg.MQTT, cfg.EVCC.LoadpointID, log)
 	ctrl := controller.New(cfg.Control, client, client.Store(), st, controller.RealClock{}, log)
-	srv := web.New(cfg.Web, ctrl, st, log)
+	upd := updater.New(cfg.Update, build.Version)
+	srv := web.New(cfg.Web, ctrl, st, upd, log)
 
 	g, ctx := errgroup.WithContext(ctx)
+
+	// Prime the GHCR check once at startup so the dashboard can show whether an
+	// update is available without the operator clicking "Check" first. Run it
+	// under the errgroup (returning nil) so its lifetime is bounded by ctx and it
+	// finishes before shutdown tears the logger down. Best effort: failures
+	// (offline, no network) are logged and retried on demand from the UI.
+	if cfg.Update.Enabled {
+		g.Go(func() error {
+			if _, err := upd.Check(ctx); err != nil {
+				log.Info("updater: initial check failed", "err", err)
+			}
+			return nil
+		})
+	}
 
 	// MQTT: connect (with built-in retry) without blocking shutdown.
 	g.Go(func() error {

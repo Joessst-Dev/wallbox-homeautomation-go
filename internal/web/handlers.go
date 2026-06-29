@@ -45,6 +45,7 @@ func (s *Server) handleDashboard(c *fiber.Ctx) error {
 		Title:    "wha — PV-surplus charging",
 		Status:   status,
 		Sessions: newSessionVMs(sessions),
+		Update:   newUpdateVM(s.now(), s.upd.Info(c.Context())),
 	}
 	return c.Render("dashboard", vm, "layout")
 }
@@ -104,6 +105,67 @@ func (s *Server) handleAPIOverride(c *fiber.Ctx) error {
 
 	if c.Get("HX-Request") != "" {
 		return s.renderStatusPartial(c)
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// handleUpdatePartial renders just the software-update fragment (htmx poll/
+// refresh target).
+func (s *Server) handleUpdatePartial(c *fiber.Ctx) error {
+	return s.renderUpdatePartial(c)
+}
+
+// renderUpdatePartial is shared by the poll endpoint and the check/apply
+// handlers so an htmx action returns the freshly-computed update state.
+func (s *Server) renderUpdatePartial(c *fiber.Ctx) error {
+	vm := newUpdateVM(s.now(), s.upd.Info(c.Context()))
+	return c.Render("partials/update", vm)
+}
+
+// handleUpdateCheck forces a GHCR re-check. For htmx requests it returns the
+// refreshed update partial; otherwise the update info as JSON.
+func (s *Server) handleUpdateCheck(c *fiber.Ctx) error {
+	info, err := s.upd.Check(c.Context())
+	if err != nil {
+		// A failed check is not fatal: surface the last-known state to the UI
+		// rather than a 500, but log the cause.
+		s.log.Warn("web: update check failed", "err", err)
+	}
+	if c.Get("HX-Request") != "" {
+		return c.Render("partials/update", newUpdateVM(s.now(), info))
+	}
+	return c.JSON(newUpdateVM(s.now(), info))
+}
+
+// updateRequest is the accepted body for POST /api/update/apply (JSON or form).
+type updateRequest struct {
+	Version string `json:"version" form:"version"`
+}
+
+// handleUpdateApply requests an upgrade to the given version. The version must
+// match the latest version GHCR currently offers (so the UI can only ever apply
+// a real, checked release); the updater additionally enforces a strict semver
+// format before writing the sidecar request.
+func (s *Server) handleUpdateApply(c *fiber.Ctx) error {
+	var req updateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid update body")
+	}
+
+	info := s.upd.Info(c.Context())
+	if !info.Enabled {
+		return fiber.NewError(fiber.StatusBadRequest, "updates are disabled")
+	}
+	if req.Version == "" || req.Version != info.Latest {
+		return fiber.NewError(fiber.StatusBadRequest, "version must equal the latest available release")
+	}
+
+	if err := s.upd.Trigger(c.Context(), req.Version); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+
+	if c.Get("HX-Request") != "" {
+		return s.renderUpdatePartial(c)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }

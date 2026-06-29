@@ -49,13 +49,40 @@ services:
     environment:
       - WHA_MQTT_BROKER=tcp://mosquitto:1883
       - WHA_DB_PATH=/data/wha.db
+      # In-UI software update (the "Software" card on the dashboard). wha checks
+      # GHCR and writes the chosen version into the shared wha-update volume; the
+      # wha-updater sidecar below performs the actual pull + recreate.
+      - WHA_UPDATE_ENABLED=true
+      - WHA_UPDATE_REQUESTDIR=/run/update
     volumes:
       - ./config.yaml:/etc/wha/config.yaml:ro
       - wha-data:/data
+      - wha-update:/run/update
     ports:
       - "8080:8080"
+
+  # Privileged helper that applies updates wha triggers from the UI. wha itself
+  # is distroless/non-root with no Docker access; this sidecar owns the Docker
+  # socket and recreates ONLY the wha service. It runs no server and listens on
+  # no port — it only reacts to the request file wha writes into wha-update.
+  wha-updater:
+    image: docker:cli
+    restart: unless-stopped
+    depends_on:
+      - wha
+    environment:
+      - WHA_UPDATE_DIR=/run/update
+      - WHA_COMPOSE_FILE=/workspace/docker-compose.yml
+      - WHA_IMAGE=ghcr.io/joessst-dev/wha
+      - WHA_SERVICE=wha
+    entrypoint: ["/bin/sh", "/workspace/scripts/updater/run.sh"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace
+      - wha-update:/run/update
 
 volumes:
   mosquitto-data: {}
   evcc-data: {}
   wha-data: {}
+  wha-update: {}
