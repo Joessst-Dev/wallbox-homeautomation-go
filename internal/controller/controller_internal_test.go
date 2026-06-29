@@ -101,7 +101,8 @@ type fakeRecorder struct {
 	pruneEventsCalls  int
 	lastPruneBefore   time.Time
 
-	settings map[string]string
+	settings      map[string]string
+	setSettingErr error
 }
 
 func (r *fakeRecorder) InsertEvent(_ context.Context, e store.Event) error {
@@ -189,6 +190,9 @@ func (r *fakeRecorder) GetSetting(_ context.Context, key string) (string, bool, 
 func (r *fakeRecorder) SetSetting(_ context.Context, key, value string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.setSettingErr != nil {
+		return r.setSettingErr
+	}
 	if r.settings == nil {
 		r.settings = map[string]string{}
 	}
@@ -400,6 +404,18 @@ var _ = Describe("Controller.tick side effects", func() {
 
 			fresh.loadChargePower(ctx)
 			Expect(fresh.Status().ChargePower).To(Equal(config.EnableModeNow))
+		})
+
+		It("does not update Status when the persist fails (memory stays consistent with the DB)", func() {
+			rec.setSettingErr = errFake
+			err := ctrl.SetChargePower(config.EnableModeNow)
+			Expect(err).To(HaveOccurred())
+			Expect(err).NotTo(MatchError(ErrInvalidChargePower))
+			Expect(ctrl.Status().ChargePower).To(Equal(cfg.EnableMode)) // unchanged
+		})
+
+		It("returns ErrInvalidChargePower for an unrecognized mode", func() {
+			Expect(ctrl.SetChargePower("bogus")).To(MatchError(ErrInvalidChargePower))
 		})
 	})
 

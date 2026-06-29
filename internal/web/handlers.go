@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -127,7 +128,12 @@ func (s *Server) handleChargePower(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid charge-power body")
 	}
 	if err := s.ctrl.SetChargePower(req.Power); err != nil {
-		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		if errors.Is(err, controller.ErrInvalidChargePower) {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		// A persistence failure is a server error, not a client mistake.
+		s.log.Warn("web: set charge power failed", "err", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to set charge power")
 	}
 	if c.Get("HX-Request") != "" {
 		return s.renderStatusPartial(c)

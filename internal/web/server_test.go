@@ -349,14 +349,24 @@ var _ = Describe("Web Server", func() {
 			Expect(body).To(ContainSubstring("Charge power"))
 		})
 
-		It("returns 400 when the controller rejects the mode", func() {
-			ctrl.chargePowerErr = fmt.Errorf("invalid charge power mode")
+		It("returns 400 for an invalid mode (ErrInvalidChargePower)", func() {
+			ctrl.chargePowerErr = fmt.Errorf("%w: bogus", controller.ErrInvalidChargePower)
 			req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
 				strings.NewReader("power=bogus"))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 			resp := doRequest(srv, req)
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+
+		It("returns 500 when persisting the mode fails", func() {
+			ctrl.chargePowerErr = fmt.Errorf("persist charge power: disk full")
+			req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
+				strings.NewReader("power=now"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 		})
 	})
 

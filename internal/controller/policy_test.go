@@ -511,6 +511,15 @@ var _ = Describe("LimitSoCTarget", func() {
 		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCMax))
 	})
 
+	It("lifts to SoCMax for a still-active, time-bounded cap-bypass", func() {
+		in := controller.Inputs{
+			Override:          controller.OverrideForceOn,
+			OverrideCapBypass: true,
+			OverrideUntil:     t0.Add(time.Hour), // not yet expired
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCMax))
+	})
+
 	It("ignores cap-bypass once the override has expired", func() {
 		in := controller.Inputs{
 			Override:          controller.OverrideForceOn,

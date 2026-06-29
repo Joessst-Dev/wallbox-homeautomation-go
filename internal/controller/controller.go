@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -146,7 +147,8 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	// (e.g. a manual ForceOff) racing in during the unlocked window must win, not
 	// be silently discarded by this stale-read expiry. The cap-bypass clears with
 	// the override; the persistent charge-power setting is left untouched.
-	if expireOverride && c.ctrl.Override == ctrl.Override && c.ctrl.OverrideUntil.Equal(ctrl.OverrideUntil) {
+	if expireOverride && c.ctrl.Override == ctrl.Override &&
+		c.ctrl.OverrideUntil.Equal(ctrl.OverrideUntil) && c.ctrl.CapBypass == ctrl.CapBypass {
 		c.ctrl.Override = OverrideAuto
 		c.ctrl.OverrideUntil = time.Time{}
 		c.ctrl.CapBypass = false
@@ -411,20 +413,27 @@ func (c *Controller) SetOverride(mode Override, until time.Time, capBypass bool)
 	c.log.Info("controller: override set", "mode", mode, "until", until, "capBypass", capBypass)
 }
 
+// ErrInvalidChargePower is returned by SetChargePower when the requested mode is
+// not a recognized evcc charge mode. Callers (e.g. the web layer) use it to tell
+// a client error apart from a persistence failure.
+var ErrInvalidChargePower = errors.New("invalid charge power mode")
+
 // SetChargePower sets the persistent charge-power mode (config.EnableModePV or
 // config.EnableModeNow) used whenever charging is enabled, in both automatic and
-// force-on charging. The choice is persisted so it survives restarts.
+// force-on charging. The choice is persisted so it survives restarts. The DB
+// write happens before the in-memory update so a failed persist never leaves
+// Status() reporting a mode that a restart would not restore.
 func (c *Controller) SetChargePower(mode string) error {
 	if mode != config.EnableModePV && mode != config.EnableModeNow {
-		return fmt.Errorf("invalid charge power mode %q (want %q or %q)", mode, config.EnableModePV, config.EnableModeNow)
+		return fmt.Errorf("%w %q (want %q or %q)", ErrInvalidChargePower, mode, config.EnableModePV, config.EnableModeNow)
+	}
+	if err := c.rec.SetSetting(context.Background(), chargePowerSetting, mode); err != nil {
+		return fmt.Errorf("persist charge power: %w", err)
 	}
 	c.mu.Lock()
 	c.ctrl.ChargePower = mode
 	c.mu.Unlock()
 
-	if err := c.rec.SetSetting(context.Background(), chargePowerSetting, mode); err != nil {
-		return fmt.Errorf("persist charge power: %w", err)
-	}
 	if err := c.rec.InsertEvent(context.Background(), store.Event{
 		TS: c.clock.Now(), Type: "command", Action: "charge_power:" + mode,
 	}); err != nil {
