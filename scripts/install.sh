@@ -39,7 +39,21 @@ warn() { printf '%s ! %s%s\n' "$YLW" "$*" "$R" >&2; }
 die()  { printf '%s ✗ %s%s\n' "$RED" "$*" "$R" >&2; exit 1; }
 
 usage() {
-  sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'
+  cat <<'USAGE'
+wha installer — set up the PV-surplus EV charging stack (Mosquitto + evcc + wha)
+on a Raspberry Pi (or any Docker host) with a single command:
+
+  curl -fsSL https://raw.githubusercontent.com/Joessst-Dev/wallbox-homeautomation-go/main/scripts/install.sh | bash
+
+Options:
+  --dry-run   Generate config files without pulling or starting the stack.
+  --help      Show this message.
+
+Environment overrides:
+  WHA_DIR=<path>        Install directory (default: ~/wha)
+  WHA_IMAGE_TAG=<tag>   wha image tag (latest|edge|vX.Y.Z), skips the version prompt
+  WHA_SKIP_START=1      Same as --dry-run
+USAGE
   exit 0
 }
 
@@ -93,6 +107,17 @@ prompt_secret() { # prompt_text -> non-empty answer, no echo
     [ -z "$reply" ] && warn "A value is required."
   done
   printf '%s' "$reply"
+}
+
+prompt_number() { # prompt_text default -> numeric answer (re-prompts on bad input)
+  local text="$1" def="$2" reply
+  while :; do
+    reply="$(prompt "$text" "$def")"
+    case "$reply" in
+      *[!0-9.]* | '' | *.*.*) warn "Expected a number, got: $reply" ;;
+      *) printf '%s' "$reply"; return ;;
+    esac
+  done
 }
 
 confirm() { # prompt_text [default y|n] -> 0 if yes
@@ -191,8 +216,9 @@ select_version() {
   local choice
   choice="$(prompt "Choice (number or tag)" "$default")"
   case "$choice" in
-    1) [ -n "$has_latest" ] && IMAGE_TAG="latest" || IMAGE_TAG="edge" ;;
-    2) IMAGE_TAG="edge" ;;
+    1) if [ -n "$has_latest" ]; then IMAGE_TAG="latest"; else IMAGE_TAG="edge"; fi ;;
+    2) IMAGE_TAG="edge"
+       [ -z "$has_latest" ] && warn "Only 'edge' is offered; using it." ;;
     latest|edge) IMAGE_TAG="$choice" ;;
     v[0-9]*|[0-9]*) IMAGE_TAG="$choice" ;;     # explicit version tag
     *) IMAGE_TAG="$default"; warn "Unrecognized choice, using '$default'." ;;
@@ -229,10 +255,10 @@ if [ -z "$REUSE" ]; then
   RENAULT_USER="$(prompt_required "MY Renault account email")"
   RENAULT_PASS="$(prompt_secret  "MY Renault account password")"
   RENAULT_VIN="$(prompt "Vehicle VIN (optional, starts with VF…)")"
-  VEH_CAPACITY="$(prompt "Vehicle usable battery capacity (kWh)" "22")"
-  VEH_MAXCURRENT="$(prompt "Charger max current (A)" "16")"
-  PRICE_GRID="$(prompt "Grid import price (EUR/kWh)" "0.29")"
-  PRICE_FEEDIN="$(prompt "Feed-in price (EUR/kWh)" "0.10")"
+  VEH_CAPACITY="$(prompt_number "Vehicle usable battery capacity (kWh)" "22")"
+  VEH_MAXCURRENT="$(prompt_number "Charger max current (A)" "16")"
+  PRICE_GRID="$(prompt_number "Grid import price (EUR/kWh)" "0.29")"
+  PRICE_FEEDIN="$(prompt_number "Feed-in price (EUR/kWh)" "0.10")"
 
   # --- broker credentials ----------------------------------------------------
   # Hex (no special chars) keeps YAML/sed substitution trivial and safe.
@@ -252,7 +278,7 @@ if [ -z "$REUSE" ]; then
 mqtt:
   broker: mosquitto:1883
   topic: evcc
-  user: $(yaml_quote "$MQTT_USER")        # evcc's key is 'user' (wha config uses 'username')
+  user: $(yaml_quote "$MQTT_USER")        # evcc uses 'user', not 'username'
   password: $(yaml_quote "$MQTT_PASS")
 
 site:
@@ -361,6 +387,9 @@ EOF
       docker run --rm -v "$INSTALL_DIR/mosquitto/config":/c eclipse-mosquitto:2 \
         mosquitto_passwd -b -c /c/passwd "$MQTT_USER" "$MQTT_PASS" >/dev/null 2>&1
     else
+      # Reachable only in a dry run (check_docker already exits otherwise). Guard
+      # explicitly so a live run can never start Mosquitto with a plaintext passwd.
+      [ -n "$DRY_RUN" ] || die "Neither mosquitto_passwd nor docker is available — cannot hash the broker password."
       warn "No mosquitto_passwd or docker available — writing a plaintext placeholder (dry-run only)."
       printf '%s:%s\n' "$MQTT_USER" "$MQTT_PASS" >"$INSTALL_DIR/mosquitto/config/passwd"
     fi
@@ -391,7 +420,10 @@ fi
 # --- validate evcc config (best effort) --------------------------------------
 if [ -z "$REUSE" ]; then
   log "Validating evcc configuration…"
-  if docker run --rm -v "$INSTALL_DIR/evcc.yaml":/etc/evcc.yaml:ro evcc/evcc:latest \
+  # Use the exact evcc image the stack will run, so checkconfig matches its schema.
+  evcc_image="$(grep -E '^[[:space:]]*image:[[:space:]]*evcc/' "$INSTALL_DIR/docker-compose.yml" \
+    | awk '{print $2}' | head -n1)"
+  if docker run --rm -v "$INSTALL_DIR/evcc.yaml":/etc/evcc.yaml:ro "${evcc_image:-evcc/evcc:latest}" \
        evcc -c /etc/evcc.yaml checkconfig >/dev/null 2>&1; then
     ok "evcc config is valid."
   else
@@ -408,9 +440,11 @@ docker compose -f "$INSTALL_DIR/docker-compose.yml" up -d
 
 log "Waiting for wha to become healthy…"
 healthy=""
-for _ in $(seq 1 30); do
+i=0
+while [ "$i" -lt 30 ]; do
   if curl -fsS "http://localhost:8080/healthz" >/dev/null 2>&1; then healthy=1; break; fi
   sleep 2
+  i=$((i + 1))
 done
 
 ip="$(hostname -I 2>/dev/null | awk '{print $1}')"; ip="${ip:-localhost}"
