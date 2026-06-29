@@ -122,6 +122,13 @@ curl -s localhost:8080/healthz      # -> ok
 
 Switch the `wha` image tag to `:latest` or a `:x.y.z` once you cut a release.
 
+**Updating.** A plain `docker compose up -d` will *not* pull a newer `:edge`
+(Compose skips the pull when a tag is already cached). To update, pull first:
+
+```sh
+docker compose pull wha && docker compose up -d
+```
+
 #### Run a local source build instead
 
 To build `wha` from source instead of pulling the image, layer the local override
@@ -206,7 +213,7 @@ anything, and keep the broker on your home network.
 
 - **`open store: ... unable to open database file (14)` (SQLITE_CANTOPEN).** The container
   runs as nonroot; a pre-existing root-owned `wha-data` volume blocks DB creation. Recreate
-  it: `docker compose down -v && docker compose up -d --build` (or remove just the
+  it: `docker compose down -v && docker compose up -d` (or remove just the
   `*_wha-data` volume).
 - **No data on the dashboard / `readyz` is 503.** wha can't reach the broker or evcc isn't
   publishing. Confirm evcc has an `mqtt:` block pointing at Mosquitto, and inspect topics
