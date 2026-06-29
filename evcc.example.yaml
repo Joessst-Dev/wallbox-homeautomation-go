@@ -12,7 +12,7 @@
 mqtt:
   broker: mosquitto:1883
   topic: evcc
-  # username: wha            # set if you enable broker auth (recommended)
+  # user: wha                # set if you enable broker auth (recommended; evcc's key is 'user')
   # password: CHANGE_ME
 
 site:
