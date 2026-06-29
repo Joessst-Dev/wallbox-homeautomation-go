@@ -279,11 +279,11 @@ var _ = Describe("Web Server", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 			window := st.gotTo.Sub(st.gotFrom)
-			Expect(window).To(BeNumerically("<=", 7*24*time.Hour))
+			Expect(window).To(BeNumerically("<=", web.MaxHistoryWindow()))
 			parsedTo, err := time.Parse(time.RFC3339, to)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(st.gotTo).To(BeTemporally("==", parsedTo))
-			Expect(st.gotFrom).To(BeTemporally("==", parsedTo.Add(-7*24*time.Hour)))
+			Expect(st.gotFrom).To(BeTemporally("==", parsedTo.Add(-web.MaxHistoryWindow())))
 		})
 
 		It("rejects to before from with 400", func() {

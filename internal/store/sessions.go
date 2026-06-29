@@ -42,12 +42,15 @@ func (s *Store) StartSession(ctx context.Context, startedAt time.Time, startReas
 
 // UpdateSessionMetrics updates the running energy/avg/peak metrics of an open
 // session without closing it, so crash recovery can preserve totals accumulated
-// before the process died. It returns an error if no row matches id.
+// before the process died. The ended_at IS NULL clause guards against ever
+// rewriting an already-closed historical record; a zero-rows result therefore
+// unambiguously means "no open session with that id". It returns an error if no
+// open row matches id.
 func (s *Store) UpdateSessionMetrics(ctx context.Context, id int64, energyWh, avgChargeW, peakChargeW float64) error {
 	res, err := s.db.ExecContext(ctx,
 		`UPDATE charge_sessions
 		    SET energy_wh = ?, avg_charge_w = ?, peak_charge_w = ?
-		  WHERE id = ?`,
+		  WHERE id = ? AND ended_at IS NULL`,
 		energyWh, avgChargeW, peakChargeW, id,
 	)
 	if err != nil {

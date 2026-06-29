@@ -301,7 +301,9 @@ var _ = Describe("Controller.tick side effects", func() {
 			snaps.set(off)
 			clk.Advance(cfg.DecisionInterval)
 			ctrl.tick(ctx, clk.Now())
-			// stale (offline) so not re-published; still 1.
+			// broker still up (brokerConnected=true), so the backstop publish is
+			// gated by limitSoCSet && !force && cadence-not-elapsed — not staleness:
+			// Online going false is not an online edge, so force stays false. Still 1.
 			Expect(cmd.limitCount()).To(Equal(1))
 
 			// evcc back online → online edge forces a re-publish.

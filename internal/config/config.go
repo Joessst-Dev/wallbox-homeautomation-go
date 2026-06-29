@@ -226,11 +226,13 @@ func (c Config) Validate() error {
 	if c.Control.Republish <= 0 {
 		return fmt.Errorf("control.republish must be positive (0 would flood evcc with commands)")
 	}
-	if c.Control.RetentionInterval <= 0 {
-		return fmt.Errorf("control.retentionInterval must be positive")
-	}
 	if c.Control.RetentionWindow < 0 {
 		return fmt.Errorf("control.retentionWindow must not be negative (0 disables pruning)")
+	}
+	// retentionInterval only matters when pruning is enabled; don't reject a
+	// retentionInterval of 0 when the user has disabled pruning (retentionWindow 0).
+	if c.Control.RetentionWindow > 0 && c.Control.RetentionInterval <= 0 {
+		return fmt.Errorf("control.retentionInterval must be positive (required when retentionWindow > 0)")
 	}
 	if c.Control.StartDwell < 0 || c.Control.StopDwell < 0 {
 		return fmt.Errorf("control.startDwell and stopDwell must not be negative")
