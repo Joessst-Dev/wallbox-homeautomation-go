@@ -1,0 +1,13 @@
+# Local development override: build the wha image from source instead of pulling
+# the published GHCR image. Layer it on top of the base compose file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+#
+# Deliberately NOT named docker-compose.override.yml, so it does NOT auto-apply
+# on the Pi (which uses the published image via `docker compose up` alone).
+services:
+  wha:
+    build: .
+    # Tag the local build distinctly so it never clobbers the pulled :edge image.
+    image: ghcr.io/joessst-dev/wha:local
+    pull_policy: build

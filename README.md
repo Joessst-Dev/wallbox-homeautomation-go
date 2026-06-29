@@ -101,10 +101,13 @@ See [docs/mqtt.md](docs/mqtt.md) for the exact evcc MQTT topic contract and
 
 ### Docker Compose (Raspberry Pi)
 
+`docker-compose.yml` pulls the published multi-arch image
+(`ghcr.io/joessst-dev/wha:edge`, public on GHCR) — no local build needed:
+
 ```sh
 cp evcc.example.yaml evcc.yaml      # fill in Sungrow IP, Easee + Renault creds
 # (optional) tune thresholds in config.yaml
-docker compose up -d
+docker compose up -d                # or: make compose-up
 ```
 
 - wha dashboard: `http://<pi>:8080`
@@ -117,15 +120,20 @@ docker compose logs -f wha          # expect "store opened" + "web server listen
 curl -s localhost:8080/healthz      # -> ok
 ```
 
-To run the prebuilt image instead of building locally, point the `wha` service at the
-published multi-arch image (the package is public):
+Switch the `wha` image tag to `:latest` or a `:x.y.z` once you cut a release.
 
-```yaml
-# docker-compose.yml
-services:
-  wha:
-    image: ghcr.io/joessst-dev/wha:edge   # or a release tag, e.g. :latest / :0.1.0
+#### Run a local source build instead
+
+To build `wha` from source instead of pulling the image, layer the local override
+(it tags the build `:local` so it never clobbers the pulled `:edge`):
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# or: make compose-local
 ```
+
+It's a named file (not `docker-compose.override.yml`) on purpose, so a plain
+`docker compose up` on the Pi keeps using the published image.
 
 ### Local development
 
