@@ -18,10 +18,6 @@ evcc.yaml
 internal/web/tailwind/tailwindcss
 node_modules/
 
-# Claude Code (local agent tooling, not part of the project)
-.claude/
-CLAUDE.md
-
 # OS / editor
 .DS_Store
 *.swp

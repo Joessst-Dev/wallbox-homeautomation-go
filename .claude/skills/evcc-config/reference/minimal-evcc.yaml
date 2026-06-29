@@ -1,0 +1,72 @@
+## minimal configuration example
+## replace the demo devices with your real hardware (use type: template where possible)
+## full reference: https://github.com/evcc-io/evcc/blob/master/evcc.dist.yaml
+
+site:
+  title: Home # display name for UI
+  meters:
+    grid: my_grid
+    pv:
+      - my_pv
+    battery:
+      - my_battery
+
+# see https://docs.evcc.io/en/docs/reference/configuration/loadpoints
+loadpoints:
+  - title: Garage # display name for UI
+    charger: my_charger # charger
+    vehicle: my_car # default vehicle
+
+# meter definitions
+# name can be freely chosen and is used as reference when assigning meters to site and loadpoints
+# for documentation see https://docs.evcc.io/docs/meters
+meters:
+  # replace with your real grid meter
+  - name: my_grid
+    type: template
+    template: demo-meter
+    usage: grid
+    power: -1000 # 1 kW feed-in
+  # replace with your real pv system
+  - name: my_pv
+    type: template
+    template: demo-meter
+    usage: pv
+    power: 4000 # 4 kW production
+  # replace with your real battery
+  - name: my_battery
+    type: template
+    template: demo-battery
+    usage: battery
+    power: -1000 # 1 kW battery charging
+    soc: 50 # 50 % state of charge
+
+# replace with your real charger
+# see https://docs.evcc.io/docs/chargers
+chargers:
+  - name: my_charger
+    type: template
+    template: demo-charger
+    status: C # charging
+    power: 2000 # 2 kW charging power
+    enabled: true # optional
+
+# replace with your real vehicle (optional)
+# see https://docs.evcc.io/docs/vehicles
+vehicles:
+  - name: my_car
+    type: template
+    template: offline
+    title: blue e-Golf
+    capacity: 50 # in kWh
+
+# enter your real grid tariff and feed-in price
+# see https://docs.evcc.io/docs/tariffs
+tariffs:
+  currency: EUR
+  grid:
+    type: fixed
+    price: 0.29 # EUR/kWh
+  feedin:
+    type: fixed
+    price: 0.10 # EUR/kWh

@@ -1,0 +1,80 @@
+## Example config: Easee Home wallbox + Renault Twingo Electric + Sungrow SH8.0 RT
+## Fill in the CHANGE_ME values, then validate with: evcc -c evcc.yaml checkconfig
+## Note: Renault Twingo Electric needs a minimum charging current of 8A at 3 phases.
+## Note: the Sungrow SH-series hybrid provides grid, PV and battery from ONE Modbus
+##       connection — three meters below share the same host/port.
+
+site:
+  title: Home # display name for UI
+  meters:
+    grid: sungrow_grid # grid reading via the Sungrow smart meter
+    pv:
+      - sungrow_pv
+    battery:
+      - sungrow_battery
+
+loadpoints:
+  - title: Garage
+    charger: easee_home
+    vehicle: twingo
+    phases: 3 # Easee Home is 3-phase; set to 1 if wired single-phase
+    mode: pv # off | now | minpv | pv — change to "now" if you have no PV/tariff control
+
+chargers:
+  - name: easee_home
+    type: template
+    template: easee
+    user: CHANGE_ME # Easee account email (same as the Easee app / portal)
+    password: CHANGE_ME # Easee account password
+    charger: CHANGE_ME # charger serial, e.g. EH000000
+
+vehicles:
+  - name: twingo
+    type: template
+    template: renault
+    title: Renault Twingo Electric
+    capacity: 22 # kWh usable (Twingo Electric ~22 kWh) — adjust if needed
+    user: CHANGE_ME # MY Renault account email
+    password: CHANGE_ME # MY Renault account password
+    vin: CHANGE_ME # optional but recommended: the car's VIN (starts with VF...)
+    minCurrent: 8 # A — Twingo Electric minimum at 3 phases
+    maxCurrent: 16 # A — adjust to your installation's limit
+
+# Sungrow SH8.0 RT hybrid inverter via Modbus TCP (WiNet-S dongle, LAN/WiFi).
+# One physical device, three logical meters that differ only by `usage`.
+# Requires recent WiNet-S firmware; older firmware doesn't expose power/SoC.
+meters:
+  - name: sungrow_grid
+    type: template
+    template: sungrow-hybrid
+    usage: grid
+    modbus: tcpip
+    id: 1 # Modbus slave id (Sungrow default is 1)
+    host: CHANGE_ME # inverter / WiNet-S IP address
+    port: 502 # Modbus TCP port (default 502)
+  - name: sungrow_pv
+    type: template
+    template: sungrow-hybrid
+    usage: pv
+    modbus: tcpip
+    id: 1
+    host: CHANGE_ME # same IP as above
+    port: 502
+  - name: sungrow_battery
+    type: template
+    template: sungrow-hybrid
+    usage: battery
+    modbus: tcpip
+    id: 1
+    host: CHANGE_ME # same IP as above
+    port: 502
+
+# Optional: enter your real tariff so pv/price-based modes work
+tariffs:
+  currency: EUR
+  grid:
+    type: fixed
+    price: 0.29 # EUR/kWh
+  feedin:
+    type: fixed
+    price: 0.10 # EUR/kWh
