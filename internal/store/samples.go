@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// maxHistoryRows bounds how many samples a single Samples query may return, so a
+// wide time range can never load an unbounded number of rows into memory.
+const maxHistoryRows = 50000
+
 // Sample is a single time-series data point used for charts.
 type Sample struct {
 	ID         int64
@@ -39,16 +43,18 @@ func (s *Store) InsertSample(ctx context.Context, sm Sample) error {
 	return nil
 }
 
-// Samples returns all samples with TS in the inclusive range [from, to],
-// oldest first.
+// Samples returns samples with TS in the inclusive range [from, to], oldest
+// first. At most maxHistoryRows rows are returned (the oldest within the range)
+// so one request can never load unbounded data.
 func (s *Store) Samples(ctx context.Context, from, to time.Time) ([]Sample, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, ts, grid_w, pv_w, home_w, battery_soc, battery_w,
 		        charge_w, vehicle_soc, charging, mode, surplus_w, state
 		   FROM samples
 		  WHERE ts >= ? AND ts <= ?
-		  ORDER BY ts ASC, id ASC`,
-		formatTime(from), formatTime(to),
+		  ORDER BY ts ASC, id ASC
+		  LIMIT ?`,
+		formatTime(from), formatTime(to), maxHistoryRows,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("samples: %w", err)
@@ -80,6 +86,21 @@ func (s *Store) Samples(ctx context.Context, from, to time.Time) ([]Sample, erro
 		return nil, fmt.Errorf("samples: iterate: %w", err)
 	}
 	return out, nil
+}
+
+// PruneSamples deletes all samples with TS strictly before the given time,
+// returning the number of rows removed.
+func (s *Store) PruneSamples(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM samples WHERE ts < ?`, formatTime(before))
+	if err != nil {
+		return 0, fmt.Errorf("prune samples: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("prune samples: rows affected: %w", err)
+	}
+	return n, nil
 }
 
 // boolToInt encodes a bool as the SQLite integer 0/1.

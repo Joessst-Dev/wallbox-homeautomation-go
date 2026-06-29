@@ -42,6 +42,21 @@ func (s *Store) InsertEvent(ctx context.Context, e Event) error {
 	return nil
 }
 
+// PruneEvents deletes all events with TS strictly before the given time,
+// returning the number of rows removed.
+func (s *Store) PruneEvents(ctx context.Context, before time.Time) (int64, error) {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM events WHERE ts < ?`, formatTime(before))
+	if err != nil {
+		return 0, fmt.Errorf("prune events: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("prune events: rows affected: %w", err)
+	}
+	return n, nil
+}
+
 // RecentEvents returns up to limit events, newest first.
 func (s *Store) RecentEvents(ctx context.Context, limit int) ([]Event, error) {
 	rows, err := s.db.QueryContext(ctx,

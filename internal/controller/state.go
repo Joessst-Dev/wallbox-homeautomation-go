@@ -48,19 +48,23 @@ const ModeOff = "off"
 
 // Inputs is a snapshot of all metrics and flags the decision engine consumes.
 type Inputs struct {
-	GridW         float64 // + = import from grid
-	PVW           float64
-	HomeW         float64
-	BatteryW      float64 // + = battery discharging
-	ChargeW       float64 // current charge power of the loadpoint
-	BatterySoC    int
-	VehicleSoC    int
-	Charging      bool
-	Connected     bool // true = a vehicle is plugged into the loadpoint
-	Ready         bool // all required metrics seen fresh at least once
-	Stale         bool // a required metric is stale OR the broker is disconnected
-	Override      Override
-	OverrideUntil time.Time // zero value = no expiry
+	GridW      float64 // + = import from grid
+	PVW        float64
+	HomeW      float64
+	BatteryW   float64 // + = battery discharging
+	ChargeW    float64 // current charge power of the loadpoint
+	BatterySoC int
+	VehicleSoC int
+	// VehicleSoCKnown is true once a vehicle SoC has been received at least once,
+	// so persistence can distinguish a genuine 0% from "never seen". Decide must
+	// not use this; the SoC cap is already gated by the Ready/Seen path.
+	VehicleSoCKnown bool
+	Charging        bool
+	Connected       bool // true = a vehicle is plugged into the loadpoint
+	Ready           bool // all required metrics seen fresh at least once
+	Stale           bool // a required metric is stale OR the broker is disconnected
+	Override        Override
+	OverrideUntil   time.Time // zero value = no expiry
 }
 
 // Timers carries the dwell bookkeeping between decisions.

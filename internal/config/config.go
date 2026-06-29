@@ -122,6 +122,12 @@ type Control struct {
 	StaleTimeout time.Duration `mapstructure:"staleTimeout"`
 
 	Republish time.Duration `mapstructure:"republish"`
+
+	// RetentionWindow bounds how long samples/events are kept; rows older than
+	// this are pruned by the janitor. Zero disables pruning. RetentionInterval is
+	// how often the janitor runs.
+	RetentionWindow   time.Duration `mapstructure:"retentionWindow"`
+	RetentionInterval time.Duration `mapstructure:"retentionInterval"`
 }
 
 // Web holds the HTTP server settings.
@@ -159,16 +165,18 @@ func Default() Config {
 			LoadpointID: "1",
 		},
 		Control: Control{
-			EnableMode:       EnableModePV,
-			StartThresholdW:  1400, // ~min charge power, single-phase Twingo
-			StopThresholdW:   0,
-			StartDwell:       2 * time.Minute, // generous: protect Easee from cloud-latency churn
-			StopDwell:        3 * time.Minute, // matches evcc's own disableDelay
-			SoCCap:           80,
-			SoCResumeBelow:   78,
-			DecisionInterval: 15 * time.Second,
-			StaleTimeout:     60 * time.Second,
-			Republish:        5 * time.Minute,
+			EnableMode:        EnableModePV,
+			StartThresholdW:   1400, // ~min charge power, single-phase Twingo
+			StopThresholdW:    0,
+			StartDwell:        2 * time.Minute, // generous: protect Easee from cloud-latency churn
+			StopDwell:         3 * time.Minute, // matches evcc's own disableDelay
+			SoCCap:            80,
+			SoCResumeBelow:    78,
+			DecisionInterval:  15 * time.Second,
+			StaleTimeout:      60 * time.Second,
+			Republish:         5 * time.Minute,
+			RetentionWindow:   90 * 24 * time.Hour, // 90 days; 0 disables pruning
+			RetentionInterval: 6 * time.Hour,
 		},
 		Web: Web{
 			BindAddr: "0.0.0.0",
@@ -217,6 +225,12 @@ func (c Config) Validate() error {
 	}
 	if c.Control.Republish <= 0 {
 		return fmt.Errorf("control.republish must be positive (0 would flood evcc with commands)")
+	}
+	if c.Control.RetentionInterval <= 0 {
+		return fmt.Errorf("control.retentionInterval must be positive")
+	}
+	if c.Control.RetentionWindow < 0 {
+		return fmt.Errorf("control.retentionWindow must not be negative (0 disables pruning)")
 	}
 	if c.Control.StartDwell < 0 || c.Control.StopDwell < 0 {
 		return fmt.Errorf("control.startDwell and stopDwell must not be negative")

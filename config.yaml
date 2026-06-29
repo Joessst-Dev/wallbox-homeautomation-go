@@ -23,6 +23,8 @@ control:
   decisionInterval: 15s # how often the control loop evaluates
   staleTimeout: 60s # power metrics older than this trigger fail-safe (charging off)
   republish: 5m # re-send mode + limitSoc backstop periodically (set-topics are not retained)
+  retentionWindow: 2160h # prune samples/events older than this (90 days); 0 disables pruning
+  retentionInterval: 6h # how often the pruning janitor runs
 
 web:
   bindAddr: 0.0.0.0
