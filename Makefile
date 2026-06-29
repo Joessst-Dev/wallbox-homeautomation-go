@@ -1,4 +1,4 @@
-.PHONY: help css build test vet lint tidy run docker-build clean
+.PHONY: help css build test vet lint tidy run docker-build compose-up compose-local clean
 
 TAILWIND := internal/web/tailwind/tailwindcss
 APP_CSS  := internal/web/static/app.css
@@ -33,6 +33,12 @@ run: ## Run locally against a broker on localhost (config via WHA_* env)
 
 docker-build: ## Build the arm64 image with buildx
 	docker buildx build --platform linux/arm64 -t wha:latest .
+
+compose-up: ## Run the stack with the published GHCR image (Pi/prod)
+	docker compose up -d
+
+compose-local: ## Run the stack building wha from source (local dev)
+	docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 clean: ## Remove build artifacts
 	rm -rf bin/ *.db *.db-wal *.db-shm

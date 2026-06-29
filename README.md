@@ -101,10 +101,13 @@ See [docs/mqtt.md](docs/mqtt.md) for the exact evcc MQTT topic contract and
 
 ### Docker Compose (Raspberry Pi)
 
+`docker-compose.yml` pulls the published multi-arch image
+(`ghcr.io/joessst-dev/wha:edge`, public on GHCR) — no local build needed:
+
 ```sh
 cp evcc.example.yaml evcc.yaml      # fill in Sungrow IP, Easee + Renault creds
 # (optional) tune thresholds in config.yaml
-docker compose up -d
+docker compose up -d                # or: make compose-up
 ```
 
 - wha dashboard: `http://<pi>:8080`
@@ -117,15 +120,27 @@ docker compose logs -f wha          # expect "store opened" + "web server listen
 curl -s localhost:8080/healthz      # -> ok
 ```
 
-To run the prebuilt image instead of building locally, point the `wha` service at the
-published multi-arch image (the package is public):
+Switch the `wha` image tag to `:latest` or a `:x.y.z` once you cut a release.
 
-```yaml
-# docker-compose.yml
-services:
-  wha:
-    image: ghcr.io/joessst-dev/wha:edge   # or a release tag, e.g. :latest / :0.1.0
+**Updating.** A plain `docker compose up -d` will *not* pull a newer `:edge`
+(Compose skips the pull when a tag is already cached). To update, pull first:
+
+```sh
+docker compose pull wha && docker compose up -d
 ```
+
+#### Run a local source build instead
+
+To build `wha` from source instead of pulling the image, layer the local override
+(it tags the build `:local` so it never clobbers the pulled `:edge`):
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+# or: make compose-local
+```
+
+It's a named file (not `docker-compose.override.yml`) on purpose, so a plain
+`docker compose up` on the Pi keeps using the published image.
 
 ### Local development
 
@@ -198,7 +213,7 @@ anything, and keep the broker on your home network.
 
 - **`open store: ... unable to open database file (14)` (SQLITE_CANTOPEN).** The container
   runs as nonroot; a pre-existing root-owned `wha-data` volume blocks DB creation. Recreate
-  it: `docker compose down -v && docker compose up -d --build` (or remove just the
+  it: `docker compose down -v && docker compose up -d` (or remove just the
   `*_wha-data` volume).
 - **No data on the dashboard / `readyz` is 503.** wha can't reach the broker or evcc isn't
   publishing. Confirm evcc has an `mqtt:` block pointing at Mosquitto, and inspect topics

@@ -2,11 +2,14 @@
 # drivers) + wha (this controller). evcc publishes state to Mosquitto; wha reads
 # it, decides, and publishes commands back.
 #
-# First run:
+# First run (Pi / production — pulls the published wha image):
 #   cp evcc.example.yaml evcc.yaml     # then fill in your Sungrow IP / Easee / Renault creds
 #   # (optional) edit config.yaml to tune thresholds
 #   docker compose up -d
 # UIs: evcc http://<pi>:7070   wha http://<pi>:8080
+#
+# Local development (build wha from source instead of pulling) — add the override:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
 
 services:
   mosquitto:
@@ -35,7 +38,10 @@ services:
     #     - /dev/ttyUSB0:/dev/ttyUSB0
 
   wha:
-    build: .
+    # Published multi-arch image (public on GHCR). For a local source build use
+    # docker-compose.local.yml (see header). Switch to :latest or a :x.y.z tag
+    # once you cut a GoReleaser release.
+    image: ghcr.io/joessst-dev/wha:edge
     restart: unless-stopped
     depends_on:
       - mosquitto
