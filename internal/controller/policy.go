@@ -31,10 +31,21 @@ func effectiveMode(in Inputs, cfg config.Control) string {
 }
 
 // LimitSoCTarget is the SoC limit wha asks evcc to enforce as its dead-man
-// backstop. It is the configured cap, lifted to SoCMax only while an explicit
-// "charge past the cap" ForceOn override is active.
+// backstop. It is the configured cap, lifted to the operator-chosen target (or
+// cfg.SoCMax when unspecified) only while an explicit "charge past the cap"
+// ForceOn override is active. The target is clamped to [SoCCap+1, SoCMax].
 func LimitSoCTarget(now time.Time, in Inputs, cfg config.Control) int {
 	if in.Override == OverrideForceOn && in.OverrideCapBypass && overrideActive(now, in) {
+		if in.OverrideCapBypassSoC > 0 {
+			target := in.OverrideCapBypassSoC
+			if target < cfg.SoCCap+1 {
+				target = cfg.SoCCap + 1
+			}
+			if target > cfg.SoCMax {
+				target = cfg.SoCMax
+			}
+			return target
+		}
 		return cfg.SoCMax
 	}
 	return cfg.SoCCap

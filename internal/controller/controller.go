@@ -152,6 +152,7 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 		c.ctrl.Override = OverrideAuto
 		c.ctrl.OverrideUntil = time.Time{}
 		c.ctrl.CapBypass = false
+		c.ctrl.CapBypassSoC = 0
 	}
 	c.lastInputs = in
 	c.lastDecision = dec
@@ -389,16 +390,19 @@ func (c *Controller) recordSample(ctx context.Context, now time.Time, in Inputs,
 
 // SetOverride sets the manual override. until is the auto-revert time; pass the
 // zero time for no expiry. Setting OverrideAuto resumes automatic control.
-// capBypass is meaningful only for OverrideForceOn: it lifts the SoC cap to
-// SoCMax for the duration of the override; it is forced off for any other mode.
-func (c *Controller) SetOverride(mode Override, until time.Time, capBypass bool) {
+// capBypass is meaningful only for OverrideForceOn: it lifts the SoC cap to the
+// chosen capBypassSoC target (or SoCMax when 0) for the duration of the override;
+// it is forced off for any other mode.
+func (c *Controller) SetOverride(mode Override, until time.Time, capBypass bool, capBypassSoC int) {
 	if mode != OverrideForceOn {
 		capBypass = false
+		capBypassSoC = 0
 	}
 	c.mu.Lock()
 	c.ctrl.Override = mode
 	c.ctrl.OverrideUntil = until
 	c.ctrl.CapBypass = capBypass
+	c.ctrl.CapBypassSoC = capBypassSoC
 	c.mu.Unlock()
 
 	action := "override:" + string(mode)
@@ -468,6 +472,7 @@ type StatusView struct {
 	Override      Override
 	OverrideUntil time.Time
 	CapBypass     bool
+	CapBypassSoC  int
 	ChargePower   string
 	SoCCap        int
 	SoCMax        int
@@ -488,6 +493,7 @@ func (c *Controller) Status() StatusView {
 		Override:      c.ctrl.Override,
 		OverrideUntil: c.ctrl.OverrideUntil,
 		CapBypass:     c.ctrl.CapBypass,
+		CapBypassSoC:  c.ctrl.CapBypassSoC,
 		ChargePower:   c.ctrl.ChargePower,
 		SoCCap:        c.cfg.SoCCap,
 		SoCMax:        c.cfg.SoCMax,

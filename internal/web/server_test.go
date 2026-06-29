@@ -38,7 +38,7 @@ type fakeController struct {
 
 func (f *fakeController) Status() controller.StatusView { return f.status }
 
-func (f *fakeController) SetOverride(mode controller.Override, until time.Time, capBypass bool) {
+func (f *fakeController) SetOverride(mode controller.Override, until time.Time, capBypass bool, capBypassSoC int) {
 	f.overrideCalled = true
 	f.overrideMode = mode
 	f.overrideUntil = until
@@ -228,17 +228,44 @@ var _ = Describe("Web Server", func() {
 			Expect(body).To(ContainSubstring("Vehicle SoC"))
 			Expect(body).To(ContainSubstring("Override"))
 			Expect(body).To(ContainSubstring(`hx-get="/partials/status"`))
+			Expect(body).To(ContainSubstring(`hx-get="/partials/controls"`))
+			Expect(body).To(ContainSubstring(`id="controls"`))
 		})
 	})
 
 	Describe("GET /partials/status", func() {
-		It("renders the status fragment without the layout", func() {
+		It("renders the status fragment without the layout or controls", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/status", nil))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
 			Expect(body).To(ContainSubstring("Surplus"))
 			Expect(body).To(ContainSubstring("charging"))
+			Expect(body).NotTo(ContainSubstring(`hx-post="/api/override"`),
+				"override form must not be in the status partial (it belongs in controls)")
+		})
+	})
+
+	Describe("GET /partials/controls", func() {
+		It("renders the controls fragment without the layout", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/controls", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Override"))
+			Expect(body).To(ContainSubstring("Charge power"))
+			Expect(body).To(ContainSubstring(`hx-post="/api/override"`))
+			Expect(body).To(ContainSubstring(`hx-target="#controls"`))
+		})
+
+		It("shows the cap-bypass target when a specific SoC is active", func() {
+			ctrl.status.CapBypass = true
+			ctrl.status.CapBypassSoC = 95
+			ctrl.status.Override = controller.OverrideForceOn
+
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/controls", nil))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("95"))
 		})
 	})
 
@@ -259,7 +286,7 @@ var _ = Describe("Web Server", func() {
 		})
 
 		Context("with an HX-Request header", func() {
-			It("returns the refreshed status partial", func() {
+			It("returns the refreshed controls partial", func() {
 				req := httptest.NewRequest(http.MethodPost, "/api/override",
 					strings.NewReader("mode=off"))
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -270,7 +297,8 @@ var _ = Describe("Web Server", func() {
 				Expect(ctrl.overrideMode).To(Equal(controller.OverrideForceOff))
 				body := bodyString(resp)
 				Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
-				Expect(body).To(ContainSubstring("Surplus"))
+				Expect(body).To(ContainSubstring("Override"))
+				Expect(body).To(ContainSubstring("Charge power"))
 			})
 		})
 
@@ -321,6 +349,22 @@ var _ = Describe("Web Server", func() {
 				Expect(ctrl.overrideCapBypass).To(BeFalse())
 			})
 		})
+
+		Context("with capBypassSoC on a force-on", func() {
+			It("returns the controls partial for htmx and calls SetOverride with the target", func() {
+				req := httptest.NewRequest(http.MethodPost, "/api/override",
+					strings.NewReader("mode=on&capBypass=true&capBypassSoC=95"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req.Header.Set("HX-Request", "true")
+
+				resp := doRequest(srv, req)
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+				Expect(ctrl.overrideMode).To(Equal(controller.OverrideForceOn))
+				Expect(ctrl.overrideCapBypass).To(BeTrue())
+				body := bodyString(resp)
+				Expect(body).To(ContainSubstring("Override"))
+			})
+		})
 	})
 
 	Describe("POST /api/charge-power", func() {
@@ -336,7 +380,7 @@ var _ = Describe("Web Server", func() {
 			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
 		})
 
-		It("returns the refreshed status partial for htmx requests", func() {
+		It("returns the refreshed controls partial for htmx requests", func() {
 			req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
 				strings.NewReader("power=pv"))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -347,6 +391,7 @@ var _ = Describe("Web Server", func() {
 			body := bodyString(resp)
 			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
 			Expect(body).To(ContainSubstring("Charge power"))
+			Expect(body).To(ContainSubstring("Override"))
 		})
 
 		It("returns 400 for an invalid mode (ErrInvalidChargePower)", func() {

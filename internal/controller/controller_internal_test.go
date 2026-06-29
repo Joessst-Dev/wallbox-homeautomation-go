@@ -364,7 +364,7 @@ var _ = Describe("Controller.tick side effects", func() {
 			Expect(cmd.lastLimit()).To(Equal(cfg.SoCCap)) // normal backstop
 
 			// Operator forces on and opts to charge past the cap.
-			ctrl.SetOverride(OverrideForceOn, time.Time{}, true)
+			ctrl.SetOverride(OverrideForceOn, time.Time{}, true, 0)
 			clk.Advance(cfg.DecisionInterval)
 			snaps.set(healthySnap(clk.Now()))
 			ctrl.tick(ctx, clk.Now())
@@ -372,7 +372,7 @@ var _ = Describe("Controller.tick side effects", func() {
 
 			// Back to auto: the cap is restored immediately (target change), not only
 			// after the republish cadence.
-			ctrl.SetOverride(OverrideAuto, time.Time{}, false)
+			ctrl.SetOverride(OverrideAuto, time.Time{}, false, 0)
 			clk.Advance(cfg.DecisionInterval)
 			snaps.set(healthySnap(clk.Now()))
 			ctrl.tick(ctx, clk.Now())
@@ -493,7 +493,7 @@ var _ = Describe("Controller.tick side effects", func() {
 	Describe("override auto-expiry (TOCTOU)", func() {
 		It("resets to Auto when an expiring override lapses", func() {
 			snaps.set(healthySnap(t0))
-			ctrl.SetOverride(OverrideForceOff, t0.Add(time.Minute), false)
+			ctrl.SetOverride(OverrideForceOff, t0.Add(time.Minute), false, 0)
 			ctrl.tick(ctx, clk.Now())
 			Expect(ctrl.Status().Override).To(Equal(OverrideForceOff))
 
@@ -511,7 +511,7 @@ var _ = Describe("Controller.tick side effects", func() {
 			snaps.set(healthySnap(t0))
 			for i := range 300 {
 				// Seed an already-expired ForceOn that a buggy tick would clear.
-				ctrl.SetOverride(OverrideForceOn, t0.Add(-time.Minute), false)
+				ctrl.SetOverride(OverrideForceOn, t0.Add(-time.Minute), false, 0)
 
 				var wg sync.WaitGroup
 				wg.Add(2)
@@ -521,7 +521,7 @@ var _ = Describe("Controller.tick side effects", func() {
 				}()
 				go func() {
 					defer wg.Done()
-					ctrl.SetOverride(OverrideForceOff, time.Time{}, false) // the winner
+					ctrl.SetOverride(OverrideForceOff, time.Time{}, false, 0) // the winner
 				}()
 				wg.Wait()
 
