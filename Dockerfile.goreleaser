@@ -1,7 +1,16 @@
 # GoReleaser places the matching prebuilt binary in the build context as ./wha.
-# No build step here, so cross-arch images assemble without QEMU.
+# No go build here, so cross-arch images assemble without QEMU.
+
+# Tiny prep stage just to materialize a /data dir owned by the nonroot user, so
+# the named volume inherits nonroot ownership on first mount (otherwise it is
+# root-owned and the nonroot process cannot create /data/wha.db).
+FROM busybox:1.36 AS prep
+RUN mkdir -p /data
+
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY wha /wha
+# uid:gid 65532 is the distroless "nonroot" user.
+COPY --from=prep --chown=65532:65532 /data /data
 VOLUME ["/data"]
 EXPOSE 8080
 ENTRYPOINT ["/wha"]
