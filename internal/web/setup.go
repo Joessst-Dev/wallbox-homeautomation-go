@@ -42,21 +42,35 @@ func (s *Server) caRootAvailable() bool {
 	return err == nil
 }
 
+// readCARoot loads the configured CA root certificate. When the deployment has
+// no CA configured or the file is missing (e.g. local dev without Caddy in
+// front) it returns a non-empty notFound message for the caller to surface as a
+// friendly 404; a non-nil err is reserved for unexpected read failures (→ 500).
+// Exactly one of (data), (notFound), (err) is meaningful.
+func (s *Server) readCARoot() (data []byte, notFound string, err error) {
+	if s.cfg.CARootPath == "" {
+		return nil, "No CA root certificate is configured for this deployment (WHA_WEB_CAROOTPATH is unset).", nil
+	}
+	data, err = os.ReadFile(s.cfg.CARootPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, "The configured CA root certificate file was not found on disk.", nil
+		}
+		return nil, "", fmt.Errorf("setup: read CA root: %w", err)
+	}
+	return data, "", nil
+}
+
 // handleSetupRootCert serves the reverse proxy's root CA certificate as a
 // download. When no CARootPath is configured, or the file is missing (e.g.
 // local dev without Caddy in front), it returns a friendly 404 — never a 500.
 func (s *Server) handleSetupRootCert(c *fiber.Ctx) error {
-	if s.cfg.CARootPath == "" {
-		return c.Status(fiber.StatusNotFound).SendString(
-			"No CA root certificate is configured for this deployment (WHA_WEB_CAROOTPATH is unset).")
-	}
-	data, err := os.ReadFile(s.cfg.CARootPath)
+	data, notFound, err := s.readCARoot()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return c.Status(fiber.StatusNotFound).SendString(
-				"The configured CA root certificate file was not found on disk.")
-		}
-		return fmt.Errorf("setup: read CA root: %w", err)
+		return err
+	}
+	if notFound != "" {
+		return c.Status(fiber.StatusNotFound).SendString(notFound)
 	}
 	c.Set(fiber.HeaderContentType, "application/x-x509-ca-cert")
 	c.Set(fiber.HeaderContentDisposition, `attachment; filename="root.crt"`)
@@ -67,17 +81,12 @@ func (s *Server) handleSetupRootCert(c *fiber.Ctx) error {
 // the root CA certificate for a guided install on iOS/macOS. Same
 // never-500-on-missing-file guard as handleSetupRootCert.
 func (s *Server) handleSetupMobileconfig(c *fiber.Ctx) error {
-	if s.cfg.CARootPath == "" {
-		return c.Status(fiber.StatusNotFound).SendString(
-			"No CA root certificate is configured for this deployment (WHA_WEB_CAROOTPATH is unset).")
-	}
-	data, err := os.ReadFile(s.cfg.CARootPath)
+	data, notFound, err := s.readCARoot()
 	if err != nil {
-		if os.IsNotExist(err) {
-			return c.Status(fiber.StatusNotFound).SendString(
-				"The configured CA root certificate file was not found on disk.")
-		}
-		return fmt.Errorf("setup: read CA root: %w", err)
+		return err
+	}
+	if notFound != "" {
+		return c.Status(fiber.StatusNotFound).SendString(notFound)
 	}
 
 	der := data

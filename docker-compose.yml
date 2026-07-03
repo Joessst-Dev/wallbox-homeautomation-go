@@ -58,14 +58,16 @@ services:
       # wha-updater sidecar below performs the actual pull + recreate.
       - WHA_UPDATE_ENABLED=true
       - WHA_UPDATE_REQUESTDIR=/run/update
-      # Serves Caddy's internal CA root from the /setup page so devices can
-      # trust it; read-only mount of Caddy's data volume below.
-      - WHA_WEB_CAROOTPATH=/caddy-data/caddy/pki/authorities/local/root.crt
+      # Serves Caddy's internal CA root from the /setup page so devices can trust
+      # it. wha reads ONLY the exported public cert (see caddy-cert-export) — it
+      # is never given a filesystem path into caddy-data, which also holds the
+      # CA's private key.
+      - WHA_WEB_CAROOTPATH=/cacert/root.crt
     volumes:
       - ./config.yaml:/etc/wha/config.yaml:ro
       - wha-data:/data
       - wha-update:/run/update
-      - caddy-data:/caddy-data:ro
+      - caddy-cacert:/cacert:ro
     # No public port here — Caddy is the only public endpoint (see below). Local
     # dev restores a direct :8080 publish via docker-compose.local.yml.
 
@@ -88,8 +90,35 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data # MUST persist: holds the internal CA root
+      - caddy-data:/data # MUST persist: holds the internal CA root (+ its key)
       - caddy-config:/config
+
+  # Exports ONLY Caddy's public root CA cert out of caddy-data into a dedicated
+  # volume, so wha can serve root.crt from /setup without ever holding a path to
+  # the CA's PRIVATE key (root.key lives beside root.crt in caddy-data). This
+  # helper runs no server and listens on no port; it waits for Caddy to mint its
+  # CA, copies the public cert, and re-checks so a CA rotation is picked up.
+  caddy-cert-export:
+    image: alpine:3
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        src=/caddy-data/caddy/pki/authorities/local/root.crt
+        dst=/cacert/root.crt
+        while :; do
+          if [ -f "$$src" ] && ! cmp -s "$$src" "$$dst" 2>/dev/null; then
+            cp "$$src" "$$dst"
+          fi
+          sleep 10
+        done
+    volumes:
+      - caddy-data:/caddy-data:ro
+      - caddy-cacert:/cacert
 
   # Privileged helper that applies updates wha triggers from the UI. wha itself
   # is distroless/non-root with no Docker access; this sidecar owns the Docker
@@ -118,3 +147,4 @@ volumes:
   wha-update: {}
   caddy-data: {}
   caddy-config: {}
+  caddy-cacert: {} # holds only the exported public root.crt (see caddy-cert-export)

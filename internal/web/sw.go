@@ -35,5 +35,10 @@ func (s *Server) handleServiceWorker(c *fiber.Ctx) error {
 
 	c.Set("Service-Worker-Allowed", "/")
 	c.Set(fiber.HeaderContentType, "application/javascript")
+	// The worker body carries the build version, so a new release must reach the
+	// browser promptly. Browsers already bypass the HTTP cache for the SW script
+	// at least every 24h; no-cache makes the fast-rollout intent explicit and
+	// removes any ambiguity from intermediary caches.
+	c.Set(fiber.HeaderCacheControl, "no-cache")
 	return c.Send(buf.Bytes())
 }
