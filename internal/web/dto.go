@@ -39,8 +39,11 @@ type StatusVM struct {
 	ChargePower    string `json:"chargePower"`
 	ChargePowerNow bool   `json:"chargePowerNow"`
 	// SoCCap/SoCMax are surfaced so the template can label the cap-bypass control.
-	SoCCap int `json:"socCap"`
-	SoCMax int `json:"socMax"`
+	// SoCCapPlusOne is the lowest target the server accepts (it clamps to
+	// SoCCap+1); the input's min uses it so the browser rejects SoCCap itself.
+	SoCCap        int `json:"socCap"`
+	SoCMax        int `json:"socMax"`
+	SoCCapPlusOne int `json:"socCapPlusOne"`
 
 	SurplusW  int    `json:"surplusW"`
 	SurplusKW string `json:"surplusKW"`
@@ -94,6 +97,7 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 		ChargePowerNow: v.ChargePower == config.EnableModeNow,
 		SoCCap:         v.SoCCap,
 		SoCMax:         v.SoCMax,
+		SoCCapPlusOne:  v.SoCCap + 1,
 
 		SurplusW:  watts(v.Surplus),
 		SurplusKW: kw(v.Surplus),

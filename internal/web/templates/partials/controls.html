@@ -78,7 +78,7 @@
       <label class="flex items-center justify-between gap-3 text-slate-500 dark:text-slate-400">
         <span>Charge to</span>
         <span class="flex items-center gap-1.5">
-          <input type="number" name="capBypassSoC" min="{{.SoCCap}}" max="{{.SoCMax}}" step="1" inputmode="numeric"
+          <input type="number" name="capBypassSoC" min="{{.SoCCapPlusOne}}" max="{{.SoCMax}}" step="1" inputmode="numeric"
                  placeholder="{{.SoCMax}}" value="{{if .CapBypassSoC}}{{.CapBypassSoC}}{{end}}"
                  class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
           <span>% ({{.SoCCap}}–{{.SoCMax}}%)</span>

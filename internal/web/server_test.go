@@ -26,10 +26,11 @@ import (
 type fakeController struct {
 	status controller.StatusView
 
-	overrideCalled    bool
-	overrideMode      controller.Override
-	overrideUntil     time.Time
-	overrideCapBypass bool
+	overrideCalled       bool
+	overrideMode         controller.Override
+	overrideUntil        time.Time
+	overrideCapBypass    bool
+	overrideCapBypassSoC int
 
 	chargePowerCalled bool
 	chargePowerMode   string
@@ -43,6 +44,7 @@ func (f *fakeController) SetOverride(mode controller.Override, until time.Time, 
 	f.overrideMode = mode
 	f.overrideUntil = until
 	f.overrideCapBypass = capBypass
+	f.overrideCapBypassSoC = capBypassSoC
 }
 
 func (f *fakeController) SetChargePower(mode string) error {
@@ -361,6 +363,7 @@ var _ = Describe("Web Server", func() {
 				Expect(resp.StatusCode).To(Equal(http.StatusOK))
 				Expect(ctrl.overrideMode).To(Equal(controller.OverrideForceOn))
 				Expect(ctrl.overrideCapBypass).To(BeTrue())
+				Expect(ctrl.overrideCapBypassSoC).To(Equal(95))
 				body := bodyString(resp)
 				Expect(body).To(ContainSubstring("Override"))
 			})

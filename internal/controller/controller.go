@@ -396,6 +396,10 @@ func (c *Controller) recordSample(ctx context.Context, now time.Time, in Inputs,
 func (c *Controller) SetOverride(mode Override, until time.Time, capBypass bool, capBypassSoC int) {
 	if mode != OverrideForceOn {
 		capBypass = false
+	}
+	// Keep CapBypassSoC consistent with CapBypass: a target only has meaning while
+	// the bypass is on, so never retain a stale value the operator didn't intend.
+	if !capBypass {
 		capBypassSoC = 0
 	}
 	c.mu.Lock()
@@ -414,7 +418,7 @@ func (c *Controller) SetOverride(mode Override, until time.Time, capBypass bool,
 	}); err != nil {
 		c.log.Warn("controller: InsertEvent (override) failed", "err", err)
 	}
-	c.log.Info("controller: override set", "mode", mode, "until", until, "capBypass", capBypass)
+	c.log.Info("controller: override set", "mode", mode, "until", until, "capBypass", capBypass, "capBypassSoC", capBypassSoC)
 }
 
 // ErrInvalidChargePower is returned by SetChargePower when the requested mode is

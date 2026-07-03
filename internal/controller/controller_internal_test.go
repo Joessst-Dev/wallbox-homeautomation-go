@@ -378,6 +378,14 @@ var _ = Describe("Controller.tick side effects", func() {
 			ctrl.tick(ctx, clk.Now())
 			Expect(cmd.lastLimit()).To(Equal(cfg.SoCCap))
 		})
+
+		It("clears a stale CapBypassSoC when a force-on arrives without the bypass", func() {
+			// A ForceOn with the bypass unchecked must not retain a previously typed
+			// target; Status should report 0 so the UI/API never show a stale value.
+			ctrl.SetOverride(OverrideForceOn, time.Time{}, false, 95)
+			Expect(ctrl.Status().CapBypass).To(BeFalse())
+			Expect(ctrl.Status().CapBypassSoC).To(Equal(0))
+		})
 	})
 
 	Describe("charge power", func() {
