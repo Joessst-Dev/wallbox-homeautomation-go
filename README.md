@@ -120,7 +120,9 @@ For the full walkthrough — what the script does step by step, all env override
 generated files, re-run behaviour, version model, and troubleshooting — see
 **[User manual → Quick Install](https://joessst-dev.github.io/wallbox-homeautomation-go/guide/quick-install)**.
 
-- wha dashboard: `http://<pi>:8080`
+- wha dashboard: `https://<pi-address>` (served by the bundled Caddy reverse
+  proxy over HTTPS with an internal CA — open `/setup` on each device to trust
+  the certificate and install wha as a home-screen app)
 - evcc UI: `http://<pi>:7070`
 
 ### Docker Compose (manual)
@@ -131,14 +133,22 @@ generated files, re-run behaviour, version model, and troubleshooting — see
 ```sh
 cp evcc.example.yaml evcc.yaml      # fill in Sungrow IP, Easee + Renault creds
 # (optional) tune thresholds in config.yaml
+echo "WHA_SITE_ADDRESS=<hostname-or-ip>" > .env  # the address you'll browse to
 docker compose up -d                # or: make compose-up
 ```
+
+The stack includes a Caddy reverse proxy that terminates HTTPS with its own
+internal CA (no public domain needed) — required for the dashboard's PWA
+install and offline support. Visit `https://<hostname-or-ip>/setup` to trust
+the certificate on each device; see
+[Secure access](https://joessst-dev.github.io/wallbox-homeautomation-go/guide/secure-access)
+for details.
 
 Check it came up cleanly:
 
 ```sh
 docker compose logs -f wha          # expect "store opened" + "web server listening"
-curl -s localhost:8080/healthz      # -> ok
+curl -sk https://localhost/healthz  # -> ok
 ```
 
 Switch the `wha` image tag to `:latest` or a `:x.y.z` once you cut a release.
@@ -229,6 +239,7 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
 | `control.retentionWindow`   | `2160h` (90d)        | Prune samples/events older than this; `0` disables pruning |
 | `control.retentionInterval` | `6h`                 | How often the pruning janitor runs |
 | `web.bindAddr` / `web.port` | `0.0.0.0` / `8080`   | Dashboard + API bind address/port |
+| `web.caRootPath`            | empty                | Path to a reverse proxy's CA root cert, served from `/setup` (empty disables it) |
 | `db.path`                   | `/data/wha.db`       | SQLite database path |
 | `log.level`                 | `info`               | `debug` \| `info` \| `warn` \| `error` |
 

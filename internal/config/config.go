@@ -140,6 +140,13 @@ type Control struct {
 type Web struct {
 	BindAddr string `mapstructure:"bindAddr"`
 	Port     int    `mapstructure:"port"`
+
+	// CARootPath is the filesystem path to a TLS-terminating reverse proxy's
+	// root CA certificate (e.g. Caddy's internal CA root), which the /setup
+	// page serves for download so devices can trust it. Empty disables the
+	// download routes (they 404 instead of erroring) — the default when no
+	// such proxy is deployed (e.g. local dev over plain HTTP/localhost).
+	CARootPath string `mapstructure:"caRootPath"`
 }
 
 // DB holds persistence settings.

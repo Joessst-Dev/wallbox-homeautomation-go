@@ -243,12 +243,23 @@ if [ -z "$REUSE" ]; then
   log "Downloading stack files…"
   fetch "docker-compose.yml" "docker-compose.yml"
   fetch "config.yaml" "config.yaml"
+  fetch "Caddyfile" "Caddyfile"
   # The wha-updater sidecar (in-UI software update) runs this script.
   mkdir -p "$INSTALL_DIR/scripts/updater"
   fetch "scripts/updater/run.sh" "scripts/updater/run.sh"
   chmod +x "$INSTALL_DIR/scripts/updater/run.sh"
   select_version
   apply_image_tag
+
+  # --- secure access: hostname/IP for Caddy's HTTPS certificate -------------
+  # Caddy's internal CA issues a cert for whatever address you'll actually type
+  # into a browser; it must match here or the connection won't validate even
+  # after the CA is trusted.
+  default_ip="$(hostname -I 2>/dev/null | awk '{print $1}')"; default_ip="${default_ip:-localhost}"
+  printf '\n%sSecure access%s — wha is served over HTTPS via Caddy (internal CA, no public domain needed)\n' "$B" "$R" >&2
+  SITE_ADDRESS="$(prompt "Hostname or IP you'll browse to" "$default_ip")"
+  printf 'WHA_SITE_ADDRESS=%s\n' "$SITE_ADDRESS" >"$INSTALL_DIR/.env"
+  ok "Will request an HTTPS cert for: $SITE_ADDRESS"
 
   # --- collect evcc credentials ---------------------------------------------
   printf '\n%sevcc setup%s — your inverter, wallbox and vehicle\n' "$B" "$R" >&2
@@ -442,16 +453,17 @@ docker compose -f "$INSTALL_DIR/docker-compose.yml" pull
 log "Starting the stack…"
 docker compose -f "$INSTALL_DIR/docker-compose.yml" up -d
 
-log "Waiting for wha to become healthy…"
+log "Waiting for Caddy to serve wha over HTTPS…"
 healthy=""
 i=0
 while [ "$i" -lt 30 ]; do
-  if curl -fsS "http://localhost:8080/healthz" >/dev/null 2>&1; then healthy=1; break; fi
+  if curl -fsSk "https://localhost/healthz" >/dev/null 2>&1; then healthy=1; break; fi
   sleep 2
   i=$((i + 1))
 done
 
-ip="$(hostname -I 2>/dev/null | awk '{print $1}')"; ip="${ip:-localhost}"
+site="$(grep -E '^WHA_SITE_ADDRESS=' "$INSTALL_DIR/.env" 2>/dev/null | cut -d= -f2-)"
+site="${site:-localhost}"
 printf '\n' >&2
 if [ -n "$healthy" ]; then
   ok "wha is up!"
@@ -461,8 +473,11 @@ fi
 cat >&2 <<EOF
 
 ${B}All set.${R}
-  wha dashboard : http://${ip}:8080
-  evcc UI       : http://${ip}:7070
+  wha dashboard : https://${site}
+  evcc UI       : http://${site}:7070
+
+  Open https://${site}/setup on each device to install the certificate, then
+  add wha to your home screen (see the same page for the "Install as an app" step).
 
   Logs    : docker compose -f $INSTALL_DIR/docker-compose.yml logs -f wha
   Update  : from the dashboard — the "Software" card checks GHCR and upgrades in place.

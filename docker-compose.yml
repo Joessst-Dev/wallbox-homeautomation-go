@@ -1,12 +1,16 @@
 # Home stack for the Raspberry Pi: Mosquitto (MQTT broker) + evcc (hardware
-# drivers) + wha (this controller). evcc publishes state to Mosquitto; wha reads
-# it, decides, and publishes commands back.
+# drivers) + wha (this controller) + Caddy (HTTPS reverse proxy). evcc publishes
+# state to Mosquitto; wha reads it, decides, and publishes commands back. Caddy
+# terminates HTTPS with its own internal CA so the wha dashboard is a secure
+# context (required for the PWA install prompt and offline service worker) —
+# see https://<address>/setup for the guided per-device certificate install.
 #
 # First run (Pi / production — pulls the published wha image):
 #   cp evcc.example.yaml evcc.yaml     # then fill in your Sungrow IP / Easee / Renault creds
 #   # (optional) edit config.yaml to tune thresholds
+#   echo "WHA_SITE_ADDRESS=<hostname-or-ip>" > .env
 #   docker compose up -d
-# UIs: evcc http://<pi>:7070   wha http://<pi>:8080
+# UIs: evcc http://<pi>:7070   wha https://<address>  (see /setup to trust the cert)
 #
 # Local development (build wha from source instead of pulling) — add the override:
 #   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
@@ -54,12 +58,67 @@ services:
       # wha-updater sidecar below performs the actual pull + recreate.
       - WHA_UPDATE_ENABLED=true
       - WHA_UPDATE_REQUESTDIR=/run/update
+      # Serves Caddy's internal CA root from the /setup page so devices can trust
+      # it. wha reads ONLY the exported public cert (see caddy-cert-export) — it
+      # is never given a filesystem path into caddy-data, which also holds the
+      # CA's private key.
+      - WHA_WEB_CAROOTPATH=/cacert/root.crt
     volumes:
       - ./config.yaml:/etc/wha/config.yaml:ro
       - wha-data:/data
       - wha-update:/run/update
+      - caddy-cacert:/cacert:ro
+    # No public port here — Caddy is the only public endpoint (see below). Local
+    # dev restores a direct :8080 publish via docker-compose.local.yml.
+
+  # Terminates HTTPS with Caddy's internal CA so the wha dashboard is a secure
+  # context (the PWA install prompt and offline service worker both require
+  # it). No public domain needed — see Caddyfile and https://<address>/setup.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - wha
+    environment:
+      # The hostname/IP you'll browse to (e.g. wha.local or the Pi's LAN IP).
+      # scripts/install.sh prompts for this and writes it to .env; set it
+      # yourself for a manual setup, or leave the localhost default for
+      # local-only access.
+      - WHA_SITE_ADDRESS=${WHA_SITE_ADDRESS:-localhost}
     ports:
-      - "8080:8080"
+      - "80:80" # Caddy's automatic HTTP -> HTTPS redirect
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # MUST persist: holds the internal CA root (+ its key)
+      - caddy-config:/config
+
+  # Exports ONLY Caddy's public root CA cert out of caddy-data into a dedicated
+  # volume, so wha can serve root.crt from /setup without ever holding a path to
+  # the CA's PRIVATE key (root.key lives beside root.crt in caddy-data). This
+  # helper runs no server and listens on no port; it waits for Caddy to mint its
+  # CA, copies the public cert, and re-checks so a CA rotation is picked up.
+  caddy-cert-export:
+    image: alpine:3
+    restart: unless-stopped
+    depends_on:
+      - caddy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        src=/caddy-data/caddy/pki/authorities/local/root.crt
+        dst=/cacert/root.crt
+        while :; do
+          if [ -f "$$src" ] && ! cmp -s "$$src" "$$dst" 2>/dev/null; then
+            cp "$$src" "$$dst"
+          fi
+          sleep 10
+        done
+    volumes:
+      - caddy-data:/caddy-data:ro
+      - caddy-cacert:/cacert
 
   # Privileged helper that applies updates wha triggers from the UI. wha itself
   # is distroless/non-root with no Docker access; this sidecar owns the Docker
@@ -86,3 +145,6 @@ volumes:
   evcc-data: {}
   wha-data: {}
   wha-update: {}
+  caddy-data: {}
+  caddy-config: {}
+  caddy-cacert: {} # holds only the exported public root.crt (see caddy-cert-export)

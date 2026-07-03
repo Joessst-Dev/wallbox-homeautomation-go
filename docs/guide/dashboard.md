@@ -107,3 +107,24 @@ The **Software** card appears at the bottom of the dashboard. When the in-UI upd
 - **Update to vX.Y.Z** button — when an update is available, initiates the in-place update (see [Updating](/guide/updating)).
 
 If the updater sidecar is not running (e.g. a local source build), the card instead shows the manual update command.
+
+## Install as an app
+
+wha's dashboard is a Progressive Web App: it can be installed to a phone or
+desktop home screen, launches full-screen, and keeps a basic offline shell if
+the connection briefly drops. This needs a **secure context** — HTTPS or
+`localhost` — because browsers refuse to register the offline service worker
+otherwise.
+
+From the dashboard, open the **Secure access & install as app** link (or go
+directly to `/setup`) for a guided, per-device walkthrough. In short:
+
+1. **Trust the certificate** (skip this if you're on `http://localhost`, which
+   is already secure): download the root certificate or, on iOS/macOS, the
+   configuration profile, and install it following your device's steps.
+2. **Reload the dashboard**, then use your browser's install prompt — or
+   Safari's Share sheet → **Add to Home Screen** on iOS — to install wha as an
+   app.
+
+See [Secure access](/guide/secure-access) for the full HTTPS setup (Caddy's
+internal CA) and why a website can't do the certificate install for you.

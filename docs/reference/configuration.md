@@ -52,6 +52,7 @@ Env key format: `WHA_<SECTION>_<KEY>` with nested camelCase keys uppercased full
 |-----|---------|---------|
 | `web.bindAddr` | `0.0.0.0` | Dashboard + API bind address |
 | `web.port` | `8080` | Dashboard + API port |
+| `web.caRootPath` | _(empty)_ | Path to a reverse proxy's CA root certificate (e.g. Caddy's internal CA root), served for download from `/setup`. Empty disables those routes (they 404, never 500) — see [Secure access](/guide/secure-access). |
 
 ## Database
 

@@ -2,11 +2,20 @@ package web_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -20,6 +29,37 @@ import (
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/updater"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/web"
 )
+
+// generateTestCertPEM returns a freshly self-signed CA certificate in PEM
+// form, standing in for a reverse proxy's root CA in setup-route specs.
+func generateTestCertPEM() []byte {
+	GinkgoHelper()
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	Expect(err).NotTo(HaveOccurred())
+
+	tmpl := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               pkix.Name{CommonName: "wha test root"},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign,
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	Expect(err).NotTo(HaveOccurred())
+
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+// writeTestCert writes a freshly generated self-signed CA cert to a temp file
+// and returns its path.
+func writeTestCert() string {
+	GinkgoHelper()
+	path := filepath.Join(GinkgoT().TempDir(), "root.crt")
+	Expect(os.WriteFile(path, generateTestCertPEM(), 0o600)).To(Succeed())
+	return path
+}
 
 // fakeController is a deterministic stand-in for *controller.Controller that
 // records the last SetOverride call so specs can assert on it.
@@ -679,6 +719,113 @@ var _ = Describe("Web Server", func() {
 		It("rejects an unsupported language code", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/lang/fr", nil))
 			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+	})
+
+	Describe("GET /sw.js", func() {
+		It("returns the service worker with the running version injected and a root-scoped header", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/sw.js", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("Service-Worker-Allowed")).To(Equal("/"))
+			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("javascript"))
+
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring(`VERSION = "1.2.3"`))
+			Expect(body).To(ContainSubstring("wha-shell-"))
+		})
+
+		It("falls back to \"dev\" when no build version is available", func() {
+			upd.info.Current = ""
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/sw.js", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(bodyString(resp)).To(ContainSubstring(`VERSION = "dev"`))
+		})
+	})
+
+	Describe("GET /static/manifest.webmanifest", func() {
+		It("serves a valid manifest scoped to the whole app", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/static/manifest.webmanifest", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+			var manifest map[string]any
+			Expect(json.Unmarshal([]byte(bodyString(resp)), &manifest)).To(Succeed())
+			Expect(manifest["start_url"]).To(Equal("/"))
+			Expect(manifest["scope"]).To(Equal("/"))
+			Expect(manifest["display"]).To(Equal("standalone"))
+		})
+	})
+
+	Describe("GET /setup", func() {
+		It("renders the guide without download links when no CA root is configured", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("Secure access"))
+			Expect(body).NotTo(ContainSubstring("Download root certificate"))
+		})
+
+		It("renders download links once a CA root is configured and present", func() {
+			srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0, CARootPath: writeTestCert()},
+				ctrl, st, upd, nil)
+
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("Download root certificate"))
+			Expect(body).To(ContainSubstring("/setup/wha-ca.mobileconfig"))
+		})
+	})
+
+	Describe("GET /setup/root.crt", func() {
+		It("returns a clean 404 when CARootPath is unset", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup/root.crt", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
+		It("returns a clean 404 when CARootPath points at a missing file", func() {
+			srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0, CARootPath: "/nonexistent/root.crt"},
+				ctrl, st, upd, nil)
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup/root.crt", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
+		It("serves the configured certificate with the x509 content type", func() {
+			certPath := writeTestCert()
+			certBytes, err := os.ReadFile(certPath)
+			Expect(err).NotTo(HaveOccurred())
+
+			srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0, CARootPath: certPath}, ctrl, st, upd, nil)
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup/root.crt", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("Content-Type")).To(Equal("application/x-x509-ca-cert"))
+			Expect(bodyString(resp)).To(Equal(string(certBytes)))
+		})
+	})
+
+	Describe("GET /setup/wha-ca.mobileconfig", func() {
+		It("returns a clean 404 when CARootPath is unset", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup/wha-ca.mobileconfig", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
+		It("returns a clean 404 when CARootPath points at a missing file", func() {
+			srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0, CARootPath: "/nonexistent/root.crt"},
+				ctrl, st, upd, nil)
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup/wha-ca.mobileconfig", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+		})
+
+		It("serves an Apple configuration profile embedding the certificate", func() {
+			srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0, CARootPath: writeTestCert()},
+				ctrl, st, upd, nil)
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup/wha-ca.mobileconfig", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("Content-Type")).To(Equal("application/x-apple-aspen-config"))
+
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("<?xml version"))
+			Expect(body).To(ContainSubstring("com.apple.security.root"))
+			Expect(body).To(ContainSubstring("<data>"))
 		})
 	})
 })

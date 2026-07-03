@@ -50,6 +50,7 @@ export default defineConfig({
                 { text: 'Manual Install', link: '/guide/manual-install' },
                 { text: 'Configuration', link: '/guide/configuration' },
                 { text: 'Dashboard', link: '/guide/dashboard' },
+                { text: 'Secure Access', link: '/guide/secure-access' },
                 { text: 'Updating', link: '/guide/updating' },
                 { text: 'How It Works', link: '/guide/how-it-works' }
               ]
@@ -98,6 +99,7 @@ export default defineConfig({
                 { text: 'Manuelle Installation', link: '/de/guide/manual-install' },
                 { text: 'Konfiguration', link: '/de/guide/configuration' },
                 { text: 'Dashboard', link: '/de/guide/dashboard' },
+                { text: 'Sicherer Zugriff', link: '/de/guide/secure-access' },
                 { text: 'Aktualisieren', link: '/de/guide/updating' },
                 { text: 'Funktionsweise', link: '/de/guide/how-it-works' }
               ]
