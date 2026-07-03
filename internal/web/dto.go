@@ -228,11 +228,34 @@ func newSessionVMs(in []store.Session) []SessionVM {
 }
 
 // dashboardVM is the top-level binding passed to the dashboard/layout templates.
+// Status/Sessions/Update are the *View wrappers (not the raw VMs) so the
+// per-section partial templates they're handed to via {{template}} carry Lang.
 type dashboardVM struct {
 	Title    string
-	Status   StatusVM
+	Lang     string
+	Status   statusView
+	Sessions sessionsView
+	Update   updateView
+}
+
+// statusView, sessionsView, and updateView wrap the logic-free JSON view
+// models with the resolved request language for HTML rendering. The JSON API
+// renders the VMs directly (unwrapped) so /api/* output is unaffected. Each
+// wrapper embeds its VM so template field access (e.g. {{.State}}) still works
+// via Go's field promotion.
+type statusView struct {
+	StatusVM
+	Lang string
+}
+
+type sessionsView struct {
+	Lang     string
 	Sessions []SessionVM
-	Update   UpdateVM
+}
+
+type updateView struct {
+	UpdateVM
+	Lang string
 }
 
 // watts rounds a power value to whole watts.
@@ -254,17 +277,19 @@ func capBypassTarget(v controller.StatusView) int {
 	return v.SoCMax
 }
 
-// humanizeAgo renders a duration as a short relative label.
+// humanizeAgo renders a duration as a short relative unit (e.g. "5m", "3h"),
+// without an "ago" suffix: the framing word is localized separately via the
+// "time.ago" catalog key so it can read "5m ago" (en) or "vor 5m" (de).
 func humanizeAgo(d time.Duration) string {
 	if d < 0 {
 		d = 0
 	}
 	switch {
 	case d < time.Minute:
-		return fmt.Sprintf("%ds ago", int(d.Seconds()))
+		return fmt.Sprintf("%ds", int(d.Seconds()))
 	case d < time.Hour:
-		return fmt.Sprintf("%dm ago", int(d.Minutes()))
+		return fmt.Sprintf("%dm", int(d.Minutes()))
 	default:
-		return fmt.Sprintf("%dh ago", int(d.Hours()))
+		return fmt.Sprintf("%dh", int(d.Hours()))
 	}
 }

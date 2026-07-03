@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="h-full">
+<html lang="{{.Lang}}" class="h-full">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -19,10 +19,18 @@
           <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
         </svg>
       </span>
-      <div class="min-w-0">
+      <div class="min-w-0 flex-1">
         <h1 class="truncate text-lg font-semibold tracking-tight sm:text-xl">Wallbox Home Automation</h1>
-        <p class="text-sm text-slate-500 dark:text-slate-400">PV-surplus EV charging</p>
+        <p class="text-sm text-slate-500 dark:text-slate-400">{{ t .Lang "nav.subtitle" }}</p>
       </div>
+      <nav aria-label="Language" class="flex shrink-0 items-center gap-1 text-xs font-semibold">
+        <a href="/lang/en" rel="nofollow noreferrer"
+           class="rounded-md px-2 py-1 transition {{if eq .Lang "en"}}bg-emerald-500 text-white{{else}}text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800{{end}}"
+           aria-current="{{if eq .Lang "en"}}true{{else}}false{{end}}">EN</a>
+        <a href="/lang/de" rel="nofollow noreferrer"
+           class="rounded-md px-2 py-1 transition {{if eq .Lang "de"}}bg-emerald-500 text-white{{else}}text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800{{end}}"
+           aria-current="{{if eq .Lang "de"}}true{{else}}false{{end}}">DE</a>
+      </nav>
     </header>
 
     <main>
@@ -30,7 +38,7 @@
     </main>
 
     <footer class="mt-8 text-center text-xs text-slate-400 dark:text-slate-600">
-      wha &middot; running on the Pi
+      {{ t .Lang "nav.footer" }}
     </footer>
   </div>
 </body>

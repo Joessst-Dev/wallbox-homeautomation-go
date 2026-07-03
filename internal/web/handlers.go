@@ -8,6 +8,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/controller"
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/web/i18n"
 )
 
 const (
@@ -35,6 +36,7 @@ func (s *Server) handleReadyz(c *fiber.Ctx) error {
 
 // handleDashboard renders the full dashboard page within the layout.
 func (s *Server) handleDashboard(c *fiber.Ctx) error {
+	lang := langFromCtx(c)
 	status := newStatusVM(s.now(), s.ctrl.Status())
 
 	sessions, err := s.st.RecentSessions(c.Context(), defaultSessionsLimit)
@@ -43,10 +45,11 @@ func (s *Server) handleDashboard(c *fiber.Ctx) error {
 	}
 
 	vm := dashboardVM{
-		Title:    "wha — PV-surplus charging",
-		Status:   status,
-		Sessions: newSessionVMs(sessions),
-		Update:   newUpdateVM(s.now(), s.upd.Info(c.Context())),
+		Title:    s.i18n.T(lang, "dashboard.title"),
+		Lang:     lang,
+		Status:   statusView{StatusVM: status, Lang: lang},
+		Sessions: sessionsView{Lang: lang, Sessions: newSessionVMs(sessions)},
+		Update:   updateView{UpdateVM: newUpdateVM(s.now(), s.upd.Info(c.Context())), Lang: lang},
 	}
 	return c.Render("dashboard", vm, "layout")
 }
@@ -58,7 +61,7 @@ func (s *Server) handleStatusPartial(c *fiber.Ctx) error {
 
 // renderStatusPartial is shared by the poll endpoint and probes.
 func (s *Server) renderStatusPartial(c *fiber.Ctx) error {
-	vm := newStatusVM(s.now(), s.ctrl.Status())
+	vm := statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: langFromCtx(c)}
 	return c.Render("partials/status", vm)
 }
 
@@ -71,8 +74,41 @@ func (s *Server) handleControlsPartial(c *fiber.Ctx) error {
 // renderControlsPartial is shared by the poll endpoint and the override/charge-power
 // handlers so an htmx action returns the freshly-computed controls.
 func (s *Server) renderControlsPartial(c *fiber.Ctx) error {
-	vm := newStatusVM(s.now(), s.ctrl.Status())
+	vm := statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: langFromCtx(c)}
 	return c.Render("partials/controls", vm)
+}
+
+// handleSetLang validates the requested language, pins it in a long-lived
+// cookie, and redirects back so the whole page reloads localized. Falls back
+// to "/" when there is no Referer (e.g. the link was opened directly).
+func (s *Server) handleSetLang(c *fiber.Ctx) error {
+	code := c.Params("code")
+	if !isSupportedLang(code) {
+		return fiber.NewError(fiber.StatusBadRequest, "unsupported language")
+	}
+
+	c.Cookie(&fiber.Cookie{
+		Name:     langCookieName,
+		Value:    code,
+		MaxAge:   int((365 * 24 * time.Hour).Seconds()),
+		SameSite: fiber.CookieSameSiteLaxMode,
+	})
+
+	redirectTo := c.Get(fiber.HeaderReferer)
+	if redirectTo == "" {
+		redirectTo = "/"
+	}
+	return c.Redirect(redirectTo)
+}
+
+// isSupportedLang reports whether code names one of i18n.Supported.
+func isSupportedLang(code string) bool {
+	for _, sup := range i18n.Supported {
+		if code == sup {
+			return true
+		}
+	}
+	return false
 }
 
 // handleSessionsPartial renders the recent-sessions table fragment.
@@ -81,7 +117,8 @@ func (s *Server) handleSessionsPartial(c *fiber.Ctx) error {
 	if err != nil {
 		return fmt.Errorf("sessions partial: %w", err)
 	}
-	return c.Render("partials/sessions", newSessionVMs(sessions))
+	vm := sessionsView{Lang: langFromCtx(c), Sessions: newSessionVMs(sessions)}
+	return c.Render("partials/sessions", vm)
 }
 
 // handleAPIStatus returns the flat status view model as JSON.
@@ -163,7 +200,7 @@ func (s *Server) handleUpdatePartial(c *fiber.Ctx) error {
 // renderUpdatePartial is shared by the poll endpoint and the check/apply
 // handlers so an htmx action returns the freshly-computed update state.
 func (s *Server) renderUpdatePartial(c *fiber.Ctx) error {
-	vm := newUpdateVM(s.now(), s.upd.Info(c.Context()))
+	vm := updateView{UpdateVM: newUpdateVM(s.now(), s.upd.Info(c.Context())), Lang: langFromCtx(c)}
 	return c.Render("partials/update", vm)
 }
 
@@ -177,7 +214,8 @@ func (s *Server) handleUpdateCheck(c *fiber.Ctx) error {
 		s.log.Warn("web: update check failed", "err", err)
 	}
 	if c.Get("HX-Request") != "" {
-		return c.Render("partials/update", newUpdateVM(s.now(), info))
+		vm := updateView{UpdateVM: newUpdateVM(s.now(), info), Lang: langFromCtx(c)}
+		return c.Render("partials/update", vm)
 	}
 	return c.JSON(newUpdateVM(s.now(), info))
 }

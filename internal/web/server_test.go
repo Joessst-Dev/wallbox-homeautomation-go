@@ -137,6 +137,13 @@ func bodyString(resp *http.Response) string {
 	return string(b)
 }
 
+// enRequest pins the dashboard language to English via the lang cookie, so
+// specs that assert on rendered copy don't depend on the German default.
+func enRequest(req *http.Request) *http.Request {
+	req.AddCookie(&http.Cookie{Name: "lang", Value: "en"})
+	return req
+}
+
 var _ = Describe("Web Server", func() {
 	var (
 		ctrl *fakeController
@@ -222,7 +229,7 @@ var _ = Describe("Web Server", func() {
 
 	Describe("GET /", func() {
 		It("renders the dashboard HTML with key labels", func() {
-			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/", nil))
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/", nil)))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).To(ContainSubstring("<!DOCTYPE html>"))
@@ -237,12 +244,12 @@ var _ = Describe("Web Server", func() {
 
 	Describe("GET /partials/status", func() {
 		It("renders the status fragment without the layout or controls", func() {
-			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/status", nil))
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/status", nil)))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
 			Expect(body).To(ContainSubstring("Surplus"))
-			Expect(body).To(ContainSubstring("charging"))
+			Expect(body).To(ContainSubstring("Charging"))
 			Expect(body).NotTo(ContainSubstring(`hx-post="/api/override"`),
 				"override form must not be in the status partial (it belongs in controls)")
 		})
@@ -250,7 +257,7 @@ var _ = Describe("Web Server", func() {
 
 	Describe("GET /partials/controls", func() {
 		It("renders the controls fragment without the layout", func() {
-			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/controls", nil))
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/controls", nil)))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
@@ -289,8 +296,8 @@ var _ = Describe("Web Server", func() {
 
 		Context("with an HX-Request header", func() {
 			It("returns the refreshed controls partial", func() {
-				req := httptest.NewRequest(http.MethodPost, "/api/override",
-					strings.NewReader("mode=off"))
+				req := enRequest(httptest.NewRequest(http.MethodPost, "/api/override",
+					strings.NewReader("mode=off")))
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				req.Header.Set("HX-Request", "true")
 
@@ -354,8 +361,8 @@ var _ = Describe("Web Server", func() {
 
 		Context("with capBypassSoC on a force-on", func() {
 			It("returns the controls partial for htmx and calls SetOverride with the target", func() {
-				req := httptest.NewRequest(http.MethodPost, "/api/override",
-					strings.NewReader("mode=on&capBypass=true&capBypassSoC=95"))
+				req := enRequest(httptest.NewRequest(http.MethodPost, "/api/override",
+					strings.NewReader("mode=on&capBypass=true&capBypassSoC=95")))
 				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 				req.Header.Set("HX-Request", "true")
 
@@ -384,8 +391,8 @@ var _ = Describe("Web Server", func() {
 		})
 
 		It("returns the refreshed controls partial for htmx requests", func() {
-			req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
-				strings.NewReader("power=pv"))
+			req := enRequest(httptest.NewRequest(http.MethodPost, "/api/charge-power",
+				strings.NewReader("power=pv")))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			req.Header.Set("HX-Request", "true")
 
@@ -572,6 +579,96 @@ var _ = Describe("Web Server", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/static/apple-touch-icon.png", nil))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("image/png"))
+		})
+	})
+
+	Describe("Localization", func() {
+		It("defaults to German when there is no cookie and no Accept-Language header", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/status", nil))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("Überschuss"))
+			Expect(body).NotTo(ContainSubstring("Surplus"))
+		})
+
+		It("renders in English when the lang cookie is en", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/status", nil)))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("Surplus"))
+		})
+
+		It("renders in English when Accept-Language prefers en and there is no cookie", func() {
+			req := httptest.NewRequest(http.MethodGet, "/partials/status", nil)
+			req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+			resp := doRequest(srv, req)
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("Surplus"))
+		})
+
+		It("prefers the cookie over Accept-Language", func() {
+			req := enRequest(httptest.NewRequest(http.MethodGet, "/partials/status", nil))
+			req.Header.Set("Accept-Language", "de")
+			resp := doRequest(srv, req)
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("Surplus"))
+		})
+
+		It("localizes the dashboard title and the sessions/update partials", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/", nil)))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("<title>wha — PV-surplus charging</title>"))
+			Expect(body).To(ContainSubstring("Recent sessions"))
+		})
+
+		It("falls back to the raw session reason code when it has no translation", func() {
+			ended := time.Now()
+			st.sessions = []store.Session{
+				{ID: 1, StartedAt: time.Now().Add(-time.Hour), EndedAt: &ended,
+					StartReason: "surplus", StopReason: "some_future_code"},
+			}
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/sessions", nil)))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("Surplus"))
+			Expect(body).To(ContainSubstring("some_future_code"))
+		})
+
+		It("renders the start SoC value, not the pointer address, in the localized 'from X%' label", func() {
+			soc := 42
+			st.sessions = []store.Session{
+				{ID: 1, StartedAt: time.Now().Add(-time.Hour), StartReason: "surplus", StartVehicleSoC: &soc},
+			}
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/sessions", nil)))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("from 42%"))
+		})
+	})
+
+	Describe("GET /lang/:code", func() {
+		It("sets the lang cookie and redirects to the Referer", func() {
+			req := httptest.NewRequest(http.MethodGet, "/lang/en", nil)
+			req.Header.Set("Referer", "/some/page")
+			resp := doRequest(srv, req)
+
+			Expect(resp.StatusCode).To(Equal(http.StatusFound))
+			Expect(resp.Header.Get("Location")).To(Equal("/some/page"))
+
+			var cookie *http.Cookie
+			for _, c := range resp.Cookies() {
+				if c.Name == "lang" {
+					cookie = c
+				}
+			}
+			Expect(cookie).NotTo(BeNil())
+			Expect(cookie.Value).To(Equal("en"))
+		})
+
+		It("redirects to / when there is no Referer", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/lang/de", nil))
+			Expect(resp.Header.Get("Location")).To(Equal("/"))
+		})
+
+		It("rejects an unsupported language code", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/lang/fr", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
 		})
 	})
 })

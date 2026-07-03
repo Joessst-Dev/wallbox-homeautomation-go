@@ -22,6 +22,7 @@ import (
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/controller"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/store"
 	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/updater"
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/web/i18n"
 )
 
 // Controller is the subset of *controller.Controller the web layer needs.
@@ -53,6 +54,7 @@ type Server struct {
 	ctrl Controller
 	st   Store
 	upd  Updater
+	i18n *i18n.Bundle
 	log  *slog.Logger
 	now  func() time.Time
 }
@@ -64,22 +66,26 @@ func New(cfg config.Web, ctrl Controller, st Store, upd Updater, log *slog.Logge
 		log = slog.Default()
 	}
 
+	bundle := i18n.New()
+
 	s := &Server{
 		cfg:  cfg,
 		ctrl: ctrl,
 		st:   st,
 		upd:  upd,
+		i18n: bundle,
 		log:  log,
 		now:  time.Now,
 	}
 
 	s.app = fiber.New(fiber.Config{
-		Views:                 newEngine(),
+		Views:                 newEngine(bundle),
 		DisableStartupMessage: true,
 		ErrorHandler:          s.errorHandler,
 	})
 
 	s.app.Use(recover.New())
+	s.app.Use(s.langMiddleware)
 	s.registerRoutes()
 
 	return s
@@ -87,8 +93,10 @@ func New(cfg config.Web, ctrl Controller, st Store, upd Updater, log *slog.Logge
 
 // newEngine constructs the HTML template engine over the embedded templates
 // directory. Template names are their paths relative to "templates" without the
-// .html suffix (e.g. "dashboard", "partials/status").
-func newEngine() *html.Engine {
+// .html suffix (e.g. "dashboard", "partials/status"). The translation funcs are
+// registered before the engine's first Load (triggered lazily by Fiber on the
+// first Render), since the html/template FuncMap can only be extended pre-parse.
+func newEngine(bundle *i18n.Bundle) *html.Engine {
 	sub, err := fs.Sub(embeddedFS, "templates")
 	if err != nil {
 		// embeddedFS is a compile-time constant; a failure here is a programmer
@@ -96,7 +104,36 @@ func newEngine() *html.Engine {
 		panic(fmt.Errorf("web: sub templates FS: %w", err))
 	}
 	engine := html.NewFileSystem(http.FS(sub), ".html")
+	engine.AddFunc("t", bundle.T)
+	engine.AddFunc("tOr", bundle.TOr)
+	// deref lets templates pass a *int (e.g. SessionVM.StartVehicleSoC) into a
+	// %d-formatted t()/tOr() call: fmt.Sprintf("%d", p) on a *int formats the
+	// pointer's address, not the pointee, so the value must be dereferenced first.
+	engine.AddFunc("deref", func(p *int) int {
+		if p == nil {
+			return 0
+		}
+		return *p
+	})
 	return engine
+}
+
+// langCookieName is the cookie that pins the operator's chosen dashboard
+// language across page loads and htmx polls.
+const langCookieName = "lang"
+
+// langMiddleware resolves the request language once per request (cookie wins,
+// else Accept-Language, else i18n.DefaultLang) and stores it for handlers to
+// read via langFromCtx.
+func (s *Server) langMiddleware(c *fiber.Ctx) error {
+	c.Locals("lang", s.i18n.Resolve(c.Cookies(langCookieName), c.Get(fiber.HeaderAcceptLanguage)))
+	return c.Next()
+}
+
+// langFromCtx reads the language resolved by langMiddleware.
+func langFromCtx(c *fiber.Ctx) string {
+	lang, _ := c.Locals("lang").(string)
+	return lang
 }
 
 // registerRoutes wires every HTTP route to its handler.
@@ -130,6 +167,7 @@ func (s *Server) registerRoutes() {
 	app.Get("/partials/controls", s.handleControlsPartial)
 	app.Get("/partials/sessions", s.handleSessionsPartial)
 	app.Get("/partials/update", s.handleUpdatePartial)
+	app.Get("/lang/:code", s.handleSetLang)
 
 	// JSON + form API.
 	api := app.Group("/api")
