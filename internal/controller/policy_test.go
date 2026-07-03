@@ -533,4 +533,31 @@ var _ = Describe("LimitSoCTarget", func() {
 		in := controller.Inputs{Override: controller.OverrideForceOff, OverrideCapBypass: true}
 		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCCap))
 	})
+
+	It("uses the operator-chosen target SoC when OverrideCapBypassSoC is set", func() {
+		in := controller.Inputs{
+			Override:             controller.OverrideForceOn,
+			OverrideCapBypass:    true,
+			OverrideCapBypassSoC: 90,
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(90))
+	})
+
+	It("clamps OverrideCapBypassSoC below SoCCap+1 up to SoCCap+1", func() {
+		in := controller.Inputs{
+			Override:             controller.OverrideForceOn,
+			OverrideCapBypass:    true,
+			OverrideCapBypassSoC: 70, // below SoCCap (80)
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCCap + 1))
+	})
+
+	It("clamps OverrideCapBypassSoC above SoCMax down to SoCMax", func() {
+		in := controller.Inputs{
+			Override:             controller.OverrideForceOn,
+			OverrideCapBypass:    true,
+			OverrideCapBypassSoC: 110,
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCMax))
+	})
 })

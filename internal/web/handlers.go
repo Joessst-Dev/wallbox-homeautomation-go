@@ -51,16 +51,28 @@ func (s *Server) handleDashboard(c *fiber.Ctx) error {
 	return c.Render("dashboard", vm, "layout")
 }
 
-// handleStatusPartial renders just the status fragment (htmx poll target).
+// handleStatusPartial renders just the live-status fragment (htmx poll target).
 func (s *Server) handleStatusPartial(c *fiber.Ctx) error {
 	return s.renderStatusPartial(c)
 }
 
-// renderStatusPartial is shared by the poll endpoint and the override handler so
-// an htmx override action returns the freshly-computed status.
+// renderStatusPartial is shared by the poll endpoint and probes.
 func (s *Server) renderStatusPartial(c *fiber.Ctx) error {
 	vm := newStatusVM(s.now(), s.ctrl.Status())
 	return c.Render("partials/status", vm)
+}
+
+// handleControlsPartial renders just the operator-controls fragment (slow poll /
+// returned after override or charge-power actions).
+func (s *Server) handleControlsPartial(c *fiber.Ctx) error {
+	return s.renderControlsPartial(c)
+}
+
+// renderControlsPartial is shared by the poll endpoint and the override/charge-power
+// handlers so an htmx action returns the freshly-computed controls.
+func (s *Server) renderControlsPartial(c *fiber.Ctx) error {
+	vm := newStatusVM(s.now(), s.ctrl.Status())
+	return c.Render("partials/controls", vm)
 }
 
 // handleSessionsPartial renders the recent-sessions table fragment.
@@ -79,13 +91,14 @@ func (s *Server) handleAPIStatus(c *fiber.Ctx) error {
 
 // overrideRequest is the accepted body for POST /api/override (JSON or form).
 type overrideRequest struct {
-	Mode      string  `json:"mode" form:"mode"`
-	Hours     float64 `json:"hours" form:"hours"`
-	CapBypass bool    `json:"capBypass" form:"capBypass"`
+	Mode         string  `json:"mode" form:"mode"`
+	Hours        float64 `json:"hours" form:"hours"`
+	CapBypass    bool    `json:"capBypass" form:"capBypass"`
+	CapBypassSoC int     `json:"capBypassSoC" form:"capBypassSoC"`
 }
 
 // handleAPIOverride sets the manual override. It accepts both form-encoded and
-// JSON bodies. For htmx requests it returns the refreshed status partial so the
+// JSON bodies. For htmx requests it returns the refreshed controls partial so the
 // UI updates in place; otherwise it returns {"ok":true}.
 func (s *Server) handleAPIOverride(c *fiber.Ctx) error {
 	var req overrideRequest
@@ -106,10 +119,10 @@ func (s *Server) handleAPIOverride(c *fiber.Ctx) error {
 	// CapBypass (charge past the SoC cap) only applies to a force-on override; the
 	// controller ignores it for other modes, but constrain it here too for clarity.
 	capBypass := req.CapBypass && mode == controller.OverrideForceOn
-	s.ctrl.SetOverride(mode, until, capBypass)
+	s.ctrl.SetOverride(mode, until, capBypass, req.CapBypassSoC)
 
 	if c.Get("HX-Request") != "" {
-		return s.renderStatusPartial(c)
+		return s.renderControlsPartial(c)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
@@ -136,7 +149,7 @@ func (s *Server) handleChargePower(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to set charge power")
 	}
 	if c.Get("HX-Request") != "" {
-		return s.renderStatusPartial(c)
+		return s.renderControlsPartial(c)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }

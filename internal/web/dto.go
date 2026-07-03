@@ -28,14 +28,22 @@ type StatusVM struct {
 	OverrideActive bool `json:"overrideActive"`
 	// CapBypass is true when a force-on override is charging past the SoC cap.
 	CapBypass bool `json:"capBypass"`
+	// CapBypassSoC is the operator-chosen target SoC for cap-bypass (0 = use SoCMax).
+	CapBypassSoC int `json:"capBypassSoC"`
+	// CapBypassTarget is the effective target SoC shown in the UI badge: the chosen
+	// CapBypassSoC when > 0, otherwise SoCMax.
+	CapBypassTarget int `json:"capBypassTarget"`
 
 	// ChargePower is the runtime charge-power mode ("pv"|"now"); ChargePowerNow is
 	// the same value pre-reduced for the template.
 	ChargePower    string `json:"chargePower"`
 	ChargePowerNow bool   `json:"chargePowerNow"`
 	// SoCCap/SoCMax are surfaced so the template can label the cap-bypass control.
-	SoCCap int `json:"socCap"`
-	SoCMax int `json:"socMax"`
+	// SoCCapPlusOne is the lowest target the server accepts (it clamps to
+	// SoCCap+1); the input's min uses it so the browser rejects SoCCap itself.
+	SoCCap        int `json:"socCap"`
+	SoCMax        int `json:"socMax"`
+	SoCCapPlusOne int `json:"socCapPlusOne"`
 
 	SurplusW  int    `json:"surplusW"`
 	SurplusKW string `json:"surplusKW"`
@@ -80,13 +88,16 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 		DesiredMode: v.DesiredMode,
 		Override:    string(v.Override),
 
-		OverrideActive: v.Override != controller.OverrideAuto,
-		CapBypass:      v.CapBypass,
+		OverrideActive:  v.Override != controller.OverrideAuto,
+		CapBypass:       v.CapBypass,
+		CapBypassSoC:    v.CapBypassSoC,
+		CapBypassTarget: capBypassTarget(v),
 
 		ChargePower:    v.ChargePower,
 		ChargePowerNow: v.ChargePower == config.EnableModeNow,
 		SoCCap:         v.SoCCap,
 		SoCMax:         v.SoCMax,
+		SoCCapPlusOne:  v.SoCCap + 1,
 
 		SurplusW:  watts(v.Surplus),
 		SurplusKW: kw(v.Surplus),
@@ -232,6 +243,15 @@ func watts(v float64) int {
 // kw formats a power value as kilowatts with one decimal place.
 func kw(v float64) string {
 	return fmt.Sprintf("%.1f", v/1000)
+}
+
+// capBypassTarget returns the effective SoC target shown in the UI badge:
+// the operator-chosen value when set, otherwise the configured SoCMax.
+func capBypassTarget(v controller.StatusView) int {
+	if v.CapBypassSoC > 0 {
+		return v.CapBypassSoC
+	}
+	return v.SoCMax
 }
 
 // humanizeAgo renders a duration as a short relative label.
