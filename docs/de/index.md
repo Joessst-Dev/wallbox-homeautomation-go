@@ -21,7 +21,7 @@ features:
     title: SoC-Deckel mit Backstop
     details: Stoppt beim 80-%-Deckel und setzt evccs limitSoc bei jedem Reconnect erneut durch – damit die Ladung auch stoppt, wenn wha abstürzt.
   - icon: 🛡️
-    title: Fail-safe by Design
+    title: Fail-safe per Konstruktion
     details: Veraltete Daten, Broker-Verbindungsabbruch, evcc offline oder kein Fahrzeug erzwingen alle den Loadpoint-Zustand „off“. Sicherheit schlägt jede andere Regel.
   - icon: 🖥️
     title: Web-Dashboard
