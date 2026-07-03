@@ -24,10 +24,10 @@
         <p class="text-sm text-slate-500 dark:text-slate-400">{{ t .Lang "nav.subtitle" }}</p>
       </div>
       <nav aria-label="Language" class="flex shrink-0 items-center gap-1 text-xs font-semibold">
-        <a href="/lang/en" rel="nofollow noreferrer"
+        <a href="/lang/en" rel="nofollow"
            class="rounded-md px-2 py-1 transition {{if eq .Lang "en"}}bg-emerald-500 text-white{{else}}text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800{{end}}"
            aria-current="{{if eq .Lang "en"}}true{{else}}false{{end}}">EN</a>
-        <a href="/lang/de" rel="nofollow noreferrer"
+        <a href="/lang/de" rel="nofollow"
            class="rounded-md px-2 py-1 transition {{if eq .Lang "de"}}bg-emerald-500 text-white{{else}}text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-800{{end}}"
            aria-current="{{if eq .Lang "de"}}true{{else}}false{{end}}">DE</a>
       </nav>

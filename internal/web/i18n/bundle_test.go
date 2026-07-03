@@ -60,6 +60,15 @@ var _ = Describe("Bundle", func() {
 		It("defaults to German when no tag in the header is supported", func() {
 			Expect(b.Match("fr-FR,es;q=0.8")).To(Equal("de"))
 		})
+
+		It("honors q-values, not header order", func() {
+			// German is listed first but down-weighted; English wins.
+			Expect(b.Match("de;q=0.5,en;q=0.9")).To(Equal("en"))
+		})
+
+		It("ignores a supported tag explicitly rejected with q=0", func() {
+			Expect(b.Match("en;q=0,de;q=0.4")).To(Equal("de"))
+		})
 	})
 
 	Describe("Resolve", func() {

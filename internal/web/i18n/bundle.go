@@ -7,6 +7,7 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -85,13 +86,22 @@ func format(msg string, args []any) string {
 	return fmt.Sprintf(msg, args...)
 }
 
-// Match picks the first Supported language named in an Accept-Language
-// header, matching on the primary subtag (e.g. "en-US" matches "en").
-// Returns DefaultLang when the header names none of Supported.
+// Match picks the highest-weighted Supported language named in an
+// Accept-Language header, matching on the primary subtag (e.g. "en-US" matches
+// "en") and honoring q-values (a q=0 entry means "not acceptable"). Ties are
+// broken by header order. Returns DefaultLang when the header names none of
+// Supported with a positive weight.
 func (b *Bundle) Match(acceptLanguage string) string {
-	for _, part := range strings.Split(acceptLanguage, ",") {
+	best := ""
+	bestQ := 0.0
+	for part := range strings.SplitSeq(acceptLanguage, ",") {
 		tag := strings.TrimSpace(part)
+		if tag == "" {
+			continue
+		}
+		q := 1.0
 		if i := strings.IndexByte(tag, ';'); i >= 0 {
+			q = parseQ(tag[i+1:])
 			tag = tag[:i]
 		}
 		if i := strings.IndexByte(tag, '-'); i >= 0 {
@@ -99,12 +109,30 @@ func (b *Bundle) Match(acceptLanguage string) string {
 		}
 		tag = strings.ToLower(strings.TrimSpace(tag))
 		for _, sup := range Supported {
-			if tag == sup {
-				return sup
+			// Strict `>` keeps the earlier header entry on a tie.
+			if tag == sup && q > bestQ {
+				best = sup
+				bestQ = q
 			}
 		}
 	}
-	return DefaultLang
+	if best == "" {
+		return DefaultLang
+	}
+	return best
+}
+
+// parseQ extracts the q-value from Accept-Language parameters (the part after
+// the first ';'), defaulting to 1.0 when absent or malformed.
+func parseQ(params string) float64 {
+	for p := range strings.SplitSeq(params, ";") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(p), "q="); ok {
+			if q, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				return q
+			}
+		}
+	}
+	return 1.0
 }
 
 // Resolve picks the request language: the cookie value when it names a

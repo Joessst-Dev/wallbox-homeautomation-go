@@ -3,6 +3,7 @@ package web
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -79,8 +80,9 @@ func (s *Server) renderControlsPartial(c *fiber.Ctx) error {
 }
 
 // handleSetLang validates the requested language, pins it in a long-lived
-// cookie, and redirects back so the whole page reloads localized. Falls back
-// to "/" when there is no Referer (e.g. the link was opened directly).
+// cookie, and redirects back so the whole page reloads localized. It only ever
+// redirects to a same-origin path (never to an absolute or cross-origin URL, so
+// it cannot be abused as an open redirect); anything else falls back to "/".
 func (s *Server) handleSetLang(c *fiber.Ctx) error {
 	code := c.Params("code")
 	if !isSupportedLang(code) {
@@ -94,11 +96,26 @@ func (s *Server) handleSetLang(c *fiber.Ctx) error {
 		SameSite: fiber.CookieSameSiteLaxMode,
 	})
 
-	redirectTo := c.Get(fiber.HeaderReferer)
-	if redirectTo == "" {
-		redirectTo = "/"
+	return c.Redirect(sameOriginPath(c.Get(fiber.HeaderReferer), string(c.Request().Host())))
+}
+
+// sameOriginPath returns the path+query to redirect to after a language switch.
+// It accepts referer only when it is same-origin (its host matches the request
+// host), and then returns just the local path+query so the redirect can never
+// point at another origin. Anything else — empty, unparseable, or cross-origin
+// — yields "/".
+func sameOriginPath(referer, host string) string {
+	if referer == "" {
+		return "/"
 	}
-	return c.Redirect(redirectTo)
+	u, err := url.Parse(referer)
+	if err != nil || u.Host != host {
+		return "/"
+	}
+	if p := u.RequestURI(); p != "" {
+		return p
+	}
+	return "/"
 }
 
 // isSupportedLang reports whether code names one of i18n.Supported.

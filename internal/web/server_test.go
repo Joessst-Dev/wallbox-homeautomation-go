@@ -643,13 +643,16 @@ var _ = Describe("Web Server", func() {
 	})
 
 	Describe("GET /lang/:code", func() {
-		It("sets the lang cookie and redirects to the Referer", func() {
+		It("sets the lang cookie and redirects to a same-origin Referer path", func() {
 			req := httptest.NewRequest(http.MethodGet, "/lang/en", nil)
-			req.Header.Set("Referer", "/some/page")
+			// httptest.NewRequest defaults Host to example.com; a same-origin
+			// Referer must carry that host to be honored.
+			req.Header.Set("Referer", "http://example.com/some/page?x=1")
 			resp := doRequest(srv, req)
 
 			Expect(resp.StatusCode).To(Equal(http.StatusFound))
-			Expect(resp.Header.Get("Location")).To(Equal("/some/page"))
+			// Only the local path+query is used, never the absolute URL.
+			Expect(resp.Header.Get("Location")).To(Equal("/some/page?x=1"))
 
 			var cookie *http.Cookie
 			for _, c := range resp.Cookies() {
@@ -663,6 +666,13 @@ var _ = Describe("Web Server", func() {
 
 		It("redirects to / when there is no Referer", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/lang/de", nil))
+			Expect(resp.Header.Get("Location")).To(Equal("/"))
+		})
+
+		It("ignores a cross-origin Referer (no open redirect)", func() {
+			req := httptest.NewRequest(http.MethodGet, "/lang/en", nil)
+			req.Header.Set("Referer", "http://evil.example.net/phish")
+			resp := doRequest(srv, req)
 			Expect(resp.Header.Get("Location")).To(Equal("/"))
 		})
 
