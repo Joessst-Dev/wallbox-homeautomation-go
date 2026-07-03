@@ -157,6 +157,16 @@ func (s *Server) registerRoutes() {
 		return c.Redirect("/static/favicon.svg", fiber.StatusMovedPermanently)
 	})
 
+	// PWA service worker: served at the root (not /static) so its scope covers
+	// the whole app, per the Service-Worker-Allowed header it sets.
+	app.Get("/sw.js", s.handleServiceWorker)
+
+	// Secure-access / PWA-install setup page and the certificate downloads it
+	// links to.
+	app.Get("/setup", s.handleSetup)
+	app.Get("/setup/root.crt", s.handleSetupRootCert)
+	app.Get("/setup/wha-ca.mobileconfig", s.handleSetupMobileconfig)
+
 	// Health probes.
 	app.Get("/healthz", s.handleHealthz)
 	app.Get("/readyz", s.handleReadyz)

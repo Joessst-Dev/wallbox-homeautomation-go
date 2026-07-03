@@ -1,0 +1,14 @@
+# Caddy config for the wha stack: terminates HTTPS with Caddy's internal CA
+# (self-signed, no public domain needed) and reverse-proxies to wha.
+#
+# WHA_SITE_ADDRESS is the hostname or IP you type into a browser (e.g.
+# wha.local or the Pi's LAN IP) — set it in .env or the environment before
+# `docker compose up` (scripts/install.sh prompts for it and writes it there).
+#
+# `tls internal` forces Caddy's local CA even for a bare IP/hostname SAN,
+# where a public CA could never issue a certificate. Trust the root it
+# generates on each device via the in-UI guide at https://<address>/setup.
+{$WHA_SITE_ADDRESS} {
+	tls internal
+	reverse_proxy wha:8080
+}

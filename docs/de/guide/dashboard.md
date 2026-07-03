@@ -107,3 +107,27 @@ Die Karte **Software** erscheint am unteren Rand des Dashboards. Ist der In-UI-U
 - Den Button **Auf vX.Y.Z aktualisieren** – ist ein Update verfügbar, startet er das In-Place-Update (siehe [Aktualisieren](/de/guide/updating)).
 
 Läuft der Updater-Sidecar nicht (z. B. bei einem lokalen Quellcode-Build), zeigt die Karte stattdessen den manuellen Update-Befehl.
+
+## Als App installieren
+
+Das wha-Dashboard ist eine Progressive Web App: Sie lässt sich auf dem
+Startbildschirm eines Telefons oder Desktops installieren, startet im
+Vollbild und behält eine einfache Offline-Hülle, falls die Verbindung kurz
+abreißt. Das setzt einen **sicheren Kontext** voraus — HTTPS oder `localhost` —,
+weil Browser den Offline-Service-Worker andernfalls nicht registrieren.
+
+Öffne vom Dashboard aus den Link **Sicherer Zugriff & als App installieren**
+(oder gehe direkt zu `/setup`) für eine geführte Anleitung je Gerät. Kurz
+gefasst:
+
+1. **Dem Zertifikat vertrauen** (überspringe das, wenn du auf
+   `http://localhost` bist, das schon sicher ist): Lade das Stammzertifikat
+   oder unter iOS/macOS das Konfigurationsprofil herunter und installiere es
+   gemäß den Schritten deines Geräts.
+2. **Lade das Dashboard neu** und nutze dann die Installationsaufforderung
+   deines Browsers — oder unter iOS das Teilen-Menü von Safari → **Zum
+   Home-Bildschirm** —, um wha als App zu installieren.
+
+Siehe [Sicherer Zugriff](/de/guide/secure-access) für das vollständige
+HTTPS-Setup (Caddys interne CA) und warum eine Website die Zertifikatsinstallation
+nicht für dich übernehmen kann.
