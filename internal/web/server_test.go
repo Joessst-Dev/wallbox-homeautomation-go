@@ -507,15 +507,23 @@ var _ = Describe("Web Server", func() {
 	})
 
 	Describe("favicon", func() {
-		It("links the SVG favicon from the dashboard head", func() {
+		It("links the SVG favicon and the apple-touch-icon from the dashboard head", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/", nil))
-			Expect(bodyString(resp)).To(ContainSubstring(`<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">`))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring(`<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">`))
+			Expect(body).To(ContainSubstring(`<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">`))
 		})
 
-		It("redirects /favicon.ico to the SVG", func() {
+		It("permanently redirects /favicon.ico to the SVG", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
-			Expect(resp.StatusCode).To(Equal(http.StatusFound))
+			Expect(resp.StatusCode).To(Equal(http.StatusMovedPermanently))
 			Expect(resp.Header.Get("Location")).To(Equal("/static/favicon.svg"))
+		})
+
+		It("serves the embedded PNG apple-touch-icon", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/static/apple-touch-icon.png", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(resp.Header.Get("Content-Type")).To(ContainSubstring("image/png"))
 		})
 	})
 })
