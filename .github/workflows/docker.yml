@@ -8,6 +8,7 @@ on:
       - ".claude/**"
       - ".gitignore"
       - "LICENSE"
+      - "docs/**"
 
 concurrency:
   group: docker-${{ github.ref }}

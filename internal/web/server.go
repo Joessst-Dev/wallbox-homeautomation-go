@@ -112,6 +112,14 @@ func (s *Server) registerRoutes() {
 		Root: http.FS(staticFS),
 	}))
 
+	// Browsers (and some tools) request /favicon.ico directly regardless of the
+	// <link rel="icon"> tag; redirect them to the embedded SVG so it resolves
+	// instead of 404ing. The target is stable for the binary's lifetime, so a
+	// permanent redirect lets clients cache the mapping and skip the round-trip.
+	app.Get("/favicon.ico", func(c *fiber.Ctx) error {
+		return c.Redirect("/static/favicon.svg", fiber.StatusMovedPermanently)
+	})
+
 	// Health probes.
 	app.Get("/healthz", s.handleHealthz)
 	app.Get("/readyz", s.handleReadyz)
