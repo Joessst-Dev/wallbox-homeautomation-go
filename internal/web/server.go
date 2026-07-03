@@ -27,7 +27,8 @@ import (
 // Controller is the subset of *controller.Controller the web layer needs.
 type Controller interface {
 	Status() controller.StatusView
-	SetOverride(mode controller.Override, until time.Time)
+	SetOverride(mode controller.Override, until time.Time, capBypass bool)
+	SetChargePower(mode string) error
 }
 
 // Store is the subset of *store.Store the web layer needs.
@@ -125,6 +126,7 @@ func (s *Server) registerRoutes() {
 	api := app.Group("/api")
 	api.Get("/status", s.handleAPIStatus)
 	api.Post("/override", s.handleAPIOverride)
+	api.Post("/charge-power", s.handleChargePower)
 	api.Get("/sessions", s.handleAPISessions)
 	api.Get("/events", s.handleAPIEvents)
 	api.Get("/history", s.handleAPIHistory)

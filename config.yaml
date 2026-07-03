@@ -20,6 +20,7 @@ control:
   stopDwell: 3m # low surplus sustained this long before stopping (matches evcc disableDelay)
   socCap: 80 # stop charging at this vehicle SoC
   socResumeBelow: 78 # only allow resuming once SoC drops below this (latch)
+  socMax: 100 # ceiling when "Charge now → charge past the cap" is used (> socCap, <= 100)
   decisionInterval: 15s # how often the control loop evaluates
   staleTimeout: 60s # power metrics older than this trigger fail-safe (charging off)
   republish: 5m # re-send mode + limitSoc backstop periodically (set-topics are not retained)

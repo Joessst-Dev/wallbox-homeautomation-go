@@ -2,7 +2,10 @@ package controller
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
+	"strconv"
 	"sync"
 	"time"
 
@@ -32,7 +35,13 @@ type Recorder interface {
 	OpenSession(ctx context.Context) (*store.Session, error)
 	PruneSamples(ctx context.Context, before time.Time) (int64, error)
 	PruneEvents(ctx context.Context, before time.Time) (int64, error)
+	GetSetting(ctx context.Context, key string) (string, bool, error)
+	SetSetting(ctx context.Context, key, value string) error
 }
+
+// chargePowerSetting is the settings key under which the persistent operator
+// charge-power mode (pv|now) is stored.
+const chargePowerSetting = "charge_power"
 
 // Controller runs the periodic decision loop: read evcc state, decide, publish
 // the desired mode on change, and persist sessions/events/samples.
@@ -45,21 +54,21 @@ type Controller struct {
 	log   *slog.Logger
 
 	// mu guards only the fields shared with the web layer (Status/SetOverride).
-	mu            sync.Mutex
-	state         State
-	timers        Timers
-	override      Override
-	overrideUntil time.Time
-	lastInputs    Inputs
-	lastDecision  Decision
-	lastSurplus   float64
-	lastSnapshot  evcc.Snapshot
-	lastTickAt    time.Time
+	mu           sync.Mutex
+	state        State
+	timers       Timers
+	ctrl         ControlState
+	lastInputs   Inputs
+	lastDecision Decision
+	lastSurplus  float64
+	lastSnapshot evcc.Snapshot
+	lastTickAt   time.Time
 
 	// The following are touched only by the loop goroutine (no lock needed).
 	lastMode            string // last published desired mode ("" = none yet)
 	lastPublishAt       time.Time
 	limitSoCSet         bool // limitSoc backstop confirmed published at least once
+	lastLimitSoC        int  // last published limitSoc target (for change detection)
 	lastLimitPublishAt  time.Time
 	prevBrokerConnected bool
 	prevOnline          bool
@@ -74,14 +83,17 @@ type Controller struct {
 // New builds a Controller.
 func New(cfg config.Control, cmd Commander, snaps SnapshotProvider, rec Recorder, clock Clock, log *slog.Logger) *Controller {
 	return &Controller{
-		cfg:      cfg,
-		cmd:      cmd,
-		snaps:    snaps,
-		rec:      rec,
-		clock:    clock,
-		log:      log,
-		state:    StateIdle,
-		override: OverrideAuto,
+		cfg:   cfg,
+		cmd:   cmd,
+		snaps: snaps,
+		rec:   rec,
+		clock: clock,
+		log:   log,
+		state: StateIdle,
+		ctrl: ControlState{
+			Override:    OverrideAuto,
+			ChargePower: cfg.EnableMode,
+		},
 	}
 }
 
@@ -90,6 +102,7 @@ func New(cfg config.Control, cmd Commander, snaps SnapshotProvider, rec Recorder
 // publishLimitSoCBackstop), so it survives a broker that is down at startup.
 func (c *Controller) Run(ctx context.Context) error {
 	c.recoverDanglingSession(ctx)
+	c.loadChargePower(ctx)
 
 	if c.cfg.RetentionWindow > 0 {
 		go c.janitor(ctx)
@@ -117,24 +130,28 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	snap := c.snaps.Snapshot()
 
 	c.mu.Lock()
-	ov, ovUntil := c.override, c.overrideUntil
+	ctrl := c.ctrl
 	prevState, prevTimers := c.state, c.timers
 	c.mu.Unlock()
 
-	in := InputsFromSnapshot(now, snap, c.cfg, ov, ovUntil)
+	in := InputsFromSnapshot(now, snap, c.cfg, ctrl)
 	dec := Decide(now, in, prevState, prevTimers, c.cfg)
 	surplus := Surplus(in)
-	expireOverride := ov != OverrideAuto && !overrideActive(now, in)
+	limitTarget := LimitSoCTarget(now, in, c.cfg)
+	expireOverride := ctrl.Override != OverrideAuto && !overrideActive(now, in)
 
 	c.mu.Lock()
 	c.state = dec.State
 	c.timers = dec.Timers
 	// Only clear the override if it is still the one we read above: a SetOverride
 	// (e.g. a manual ForceOff) racing in during the unlocked window must win, not
-	// be silently discarded by this stale-read expiry.
-	if expireOverride && c.override == ov && c.overrideUntil.Equal(ovUntil) {
-		c.override = OverrideAuto
-		c.overrideUntil = time.Time{}
+	// be silently discarded by this stale-read expiry. The cap-bypass clears with
+	// the override; the persistent charge-power setting is left untouched.
+	if expireOverride && c.ctrl.Override == ctrl.Override &&
+		c.ctrl.OverrideUntil.Equal(ctrl.OverrideUntil) && c.ctrl.CapBypass == ctrl.CapBypass {
+		c.ctrl.Override = OverrideAuto
+		c.ctrl.OverrideUntil = time.Time{}
+		c.ctrl.CapBypass = false
 	}
 	c.lastInputs = in
 	c.lastDecision = dec
@@ -165,7 +182,7 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	}
 
 	c.publishMode(ctx, now, dec, in, surplus, force)
-	c.publishLimitSoCBackstop(now, snap.BrokerConnected, force)
+	c.publishLimitSoC(ctx, now, limitTarget, in, surplus, snap.BrokerConnected, force)
 	c.trackSession(ctx, now, in, dec.State)
 	c.recordSample(ctx, now, in, surplus, dec)
 }
@@ -192,24 +209,33 @@ func (c *Controller) publishMode(ctx context.Context, now time.Time, dec Decisio
 	c.lastPublishAt = now
 }
 
-// publishLimitSoCBackstop keeps evcc's loadpoint limitSoc set to the SoC cap so
-// evcc enforces the stop even if wha dies. It retries until the first success,
-// re-asserts when forced (broker reconnect or evcc online edge), and refreshes
-// on the republish cadence.
-func (c *Controller) publishLimitSoCBackstop(now time.Time, brokerConnected, force bool) {
+// publishLimitSoC keeps evcc's loadpoint limitSoc set to target so evcc enforces
+// the stop even if wha dies. target is normally the SoC cap, but is lifted to
+// SoCMax while an explicit cap-bypass override is active. It publishes on first
+// run, whenever the target changes (so reverting a bypass restores the cap at
+// once), when forced (broker reconnect or evcc online edge), and on the
+// republish cadence.
+func (c *Controller) publishLimitSoC(ctx context.Context, now time.Time, target int, in Inputs, surplus float64, brokerConnected, force bool) {
 	if !brokerConnected {
 		return
 	}
-	if c.limitSoCSet && !force && now.Sub(c.lastLimitPublishAt) < c.cfg.Republish {
+	changed := target != c.lastLimitSoC
+	if c.limitSoCSet && !changed && !force && now.Sub(c.lastLimitPublishAt) < c.cfg.Republish {
 		return
 	}
-	if err := c.cmd.SetLimitSoC(c.cfg.SoCCap); err != nil {
+	if err := c.cmd.SetLimitSoC(target); err != nil {
 		c.log.Warn("controller: SetLimitSoC backstop failed (will retry)", "err", err)
 		return
 	}
+	if changed && c.limitSoCSet {
+		c.recordEvent(ctx, store.Event{
+			TS: now, Type: "command", Action: "set_limit_soc:" + strconv.Itoa(target),
+		}, in, surplus)
+	}
 	c.limitSoCSet = true
+	c.lastLimitSoC = target
 	c.lastLimitPublishAt = now
-	c.log.Debug("controller: limitSoc backstop published", "cap", c.cfg.SoCCap)
+	c.log.Debug("controller: limitSoc backstop published", "limit", target)
 }
 
 // trackSession opens/closes charge sessions on the evcc charging edge and
@@ -363,18 +389,75 @@ func (c *Controller) recordSample(ctx context.Context, now time.Time, in Inputs,
 
 // SetOverride sets the manual override. until is the auto-revert time; pass the
 // zero time for no expiry. Setting OverrideAuto resumes automatic control.
-func (c *Controller) SetOverride(mode Override, until time.Time) {
+// capBypass is meaningful only for OverrideForceOn: it lifts the SoC cap to
+// SoCMax for the duration of the override; it is forced off for any other mode.
+func (c *Controller) SetOverride(mode Override, until time.Time, capBypass bool) {
+	if mode != OverrideForceOn {
+		capBypass = false
+	}
 	c.mu.Lock()
-	c.override = mode
-	c.overrideUntil = until
+	c.ctrl.Override = mode
+	c.ctrl.OverrideUntil = until
+	c.ctrl.CapBypass = capBypass
 	c.mu.Unlock()
 
+	action := "override:" + string(mode)
+	if capBypass {
+		action += ":past_cap"
+	}
 	if err := c.rec.InsertEvent(context.Background(), store.Event{
-		TS: c.clock.Now(), Type: "override", Action: "override:" + string(mode),
+		TS: c.clock.Now(), Type: "override", Action: action,
 	}); err != nil {
 		c.log.Warn("controller: InsertEvent (override) failed", "err", err)
 	}
-	c.log.Info("controller: override set", "mode", mode, "until", until)
+	c.log.Info("controller: override set", "mode", mode, "until", until, "capBypass", capBypass)
+}
+
+// ErrInvalidChargePower is returned by SetChargePower when the requested mode is
+// not a recognized evcc charge mode. Callers (e.g. the web layer) use it to tell
+// a client error apart from a persistence failure.
+var ErrInvalidChargePower = errors.New("invalid charge power mode")
+
+// SetChargePower sets the persistent charge-power mode (config.EnableModePV or
+// config.EnableModeNow) used whenever charging is enabled, in both automatic and
+// force-on charging. The choice is persisted so it survives restarts. The DB
+// write happens before the in-memory update so a failed persist never leaves
+// Status() reporting a mode that a restart would not restore.
+func (c *Controller) SetChargePower(mode string) error {
+	if mode != config.EnableModePV && mode != config.EnableModeNow {
+		return fmt.Errorf("%w %q (want %q or %q)", ErrInvalidChargePower, mode, config.EnableModePV, config.EnableModeNow)
+	}
+	if err := c.rec.SetSetting(context.Background(), chargePowerSetting, mode); err != nil {
+		return fmt.Errorf("persist charge power: %w", err)
+	}
+	c.mu.Lock()
+	c.ctrl.ChargePower = mode
+	c.mu.Unlock()
+
+	if err := c.rec.InsertEvent(context.Background(), store.Event{
+		TS: c.clock.Now(), Type: "command", Action: "charge_power:" + mode,
+	}); err != nil {
+		c.log.Warn("controller: InsertEvent (charge_power) failed", "err", err)
+	}
+	c.log.Info("controller: charge power set", "mode", mode)
+	return nil
+}
+
+// loadChargePower restores the persisted charge-power mode at startup, keeping
+// the config default when none is stored or the stored value is invalid.
+func (c *Controller) loadChargePower(ctx context.Context) {
+	mode, ok, err := c.rec.GetSetting(ctx, chargePowerSetting)
+	if err != nil {
+		c.log.Warn("controller: load charge power failed (using default)", "err", err)
+		return
+	}
+	if !ok || (mode != config.EnableModePV && mode != config.EnableModeNow) {
+		return
+	}
+	c.mu.Lock()
+	c.ctrl.ChargePower = mode
+	c.mu.Unlock()
+	c.log.Info("controller: charge power restored", "mode", mode)
 }
 
 // StatusView is a read-only snapshot of the controller for the web layer.
@@ -384,6 +467,10 @@ type StatusView struct {
 	Reason        string
 	Override      Override
 	OverrideUntil time.Time
+	CapBypass     bool
+	ChargePower   string
+	SoCCap        int
+	SoCMax        int
 	Surplus       float64
 	Inputs        Inputs
 	Snapshot      evcc.Snapshot
@@ -398,8 +485,12 @@ func (c *Controller) Status() StatusView {
 		State:         c.state,
 		DesiredMode:   c.lastDecision.DesiredMode,
 		Reason:        c.lastDecision.Reason,
-		Override:      c.override,
-		OverrideUntil: c.overrideUntil,
+		Override:      c.ctrl.Override,
+		OverrideUntil: c.ctrl.OverrideUntil,
+		CapBypass:     c.ctrl.CapBypass,
+		ChargePower:   c.ctrl.ChargePower,
+		SoCCap:        c.cfg.SoCCap,
+		SoCMax:        c.cfg.SoCMax,
 		Surplus:       c.lastSurplus,
 		Inputs:        c.lastInputs,
 		Snapshot:      c.lastSnapshot,

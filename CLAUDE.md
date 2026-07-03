@@ -72,7 +72,14 @@ evcc → MQTT(Mosquitto) → evcc.Store (snapshot) → controller.tick:
   is deliberately **not** stale-gated; the last known value is always used, with the evcc
   `limitSoc` backstop bounding overshoot. Don't add a short stale timeout to it.
 - The `limitSoc` dead-man backstop and the mode are re-published on broker reconnect and on the
-  `Republish` cadence (set-topics aren't retained).
+  `Republish` cadence (set-topics aren't retained). The backstop target is normally `control.socCap`,
+  but is lifted to `control.socMax` while an explicit "charge past the cap" force-on override is
+  active (`LimitSoCTarget`), and re-published immediately when the target changes so clearing the
+  override restores the cap at once.
+- **The charge mode (`pv`/`now`) is a runtime, persisted setting**, not just `control.enableMode`.
+  `Decide` uses `Inputs.ChargePower` (via `effectiveMode`) for both automatic and force-on charging;
+  it is set with `SetChargePower`, stored in the `settings` KV table, and reloaded on startup, so it
+  survives restarts (including the in-UI update). `control.enableMode` is only the initial default.
 
 ## Testing approach
 
