@@ -11,10 +11,10 @@
     </svg>
     <div>
       <p class="font-semibold">
-        {{if .Stale}}Live data is stale{{else if not .BrokerConnected}}MQTT broker disconnected{{else}}evcc is offline{{end}}
+        {{if .Stale}}{{ t .Lang "status.stale_title" }}{{else if not .BrokerConnected}}{{ t .Lang "status.broker_disconnected_title" }}{{else}}{{ t .Lang "status.evcc_offline_title" }}{{end}}
       </p>
       <p class="text-[0.8125rem] opacity-90">
-        {{if .Stale}}Showing the last known values{{if .HasUpdated}} from {{.UpdatedAgo}}{{end}}.{{else}}Readings may be out of date until the connection is restored.{{end}}
+        {{if .Stale}}{{if .HasUpdated}}{{ t .Lang "status.stale_body_ago" .UpdatedAgo }}{{else}}{{ t .Lang "status.stale_body" }}{{end}}{{else}}{{ t .Lang "status.disconnected_body" }}{{end}}
       </p>
     </div>
   </div>
@@ -41,9 +41,9 @@
         </span>
 
         <div class="min-w-0 flex-1">
-          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Controller</p>
+          <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t .Lang "status.controller_label" }}</p>
           <p class="text-2xl font-bold capitalize leading-tight {{if .Charging}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-800 dark:text-slate-100{{end}}">
-            {{.State}}
+            {{ t .Lang (printf "state.%s" .State) }}
           </p>
           <p class="mt-1 text-sm text-slate-600 dark:text-slate-300">{{.Reason}}</p>
         </div>
@@ -51,7 +51,7 @@
 
       <dl class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-t border-slate-100 pt-3 text-sm dark:border-slate-800">
         <div class="flex items-center gap-2">
-          <dt class="text-slate-500 dark:text-slate-400">Desired mode</dt>
+          <dt class="text-slate-500 dark:text-slate-400">{{ t .Lang "status.desired_mode_label" }}</dt>
           <dd class="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-semibold capitalize text-slate-700 dark:bg-slate-800 dark:text-slate-200">{{.DesiredMode}}</dd>
         </div>
         <div class="ml-auto flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-500">
@@ -59,7 +59,7 @@
             {{if not .Stale}}<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>{{end}}
             <span class="relative inline-flex h-2 w-2 rounded-full {{if .Stale}}bg-amber-400{{else}}bg-emerald-500{{end}}"></span>
           </span>
-          {{if .HasUpdated}}<time datetime="{{.UpdatedAt}}">Updated {{.UpdatedAgo}}</time>{{else}}Awaiting first update{{end}}
+          {{if .HasUpdated}}<time datetime="{{.UpdatedAt}}">{{ t .Lang "status.updated_prefix" }} {{ t .Lang "time.ago" .UpdatedAgo }}</time>{{else}}{{ t .Lang "status.awaiting_first_update" }}{{end}}
         </div>
       </dl>
     </div>
@@ -69,36 +69,36 @@
 
     {{- /* Power flow: the surplus is the headline number. */ -}}
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Power flow</h2>
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t .Lang "status.power_flow_heading" }}</h2>
 
       <div class="mt-3 rounded-xl px-4 py-3 {{if gt .SurplusW 0}}bg-emerald-50 dark:bg-emerald-500/10{{else}}bg-slate-50 dark:bg-slate-800/60{{end}}">
-        <p class="text-xs font-medium text-slate-500 dark:text-slate-400">Surplus</p>
+        <p class="text-xs font-medium text-slate-500 dark:text-slate-400">{{ t .Lang "status.surplus_label" }}</p>
         <p class="mt-0.5 text-3xl font-bold tabular-nums {{if gt .SurplusW 0}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-700 dark:text-slate-200{{end}}">
           {{.SurplusW}}<span class="ml-1 text-lg font-semibold text-slate-400 dark:text-slate-500">W</span>
         </p>
-        <p class="text-xs tabular-nums text-slate-400 dark:text-slate-500">{{.SurplusKW}} kW available</p>
+        <p class="text-xs tabular-nums text-slate-400 dark:text-slate-500">{{ t .Lang "status.surplus_available" .SurplusKW }}</p>
       </div>
 
       <dl class="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
         <div>
-          <dt class="text-xs text-slate-500 dark:text-slate-400">PV</dt>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.pv_label" }}</dt>
           <dd class="font-semibold tabular-nums">{{.PVKW}} <span class="text-xs font-normal text-slate-400">kW</span></dd>
         </div>
         <div>
-          <dt class="text-xs text-slate-500 dark:text-slate-400">Home</dt>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.home_label" }}</dt>
           <dd class="font-semibold tabular-nums">{{.HomeKW}} <span class="text-xs font-normal text-slate-400">kW</span></dd>
         </div>
         <div>
-          <dt class="text-xs text-slate-500 dark:text-slate-400">Grid</dt>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.grid_label" }}</dt>
           <dd class="font-semibold tabular-nums">{{.GridW}} <span class="text-xs font-normal text-slate-400">W</span></dd>
         </div>
         <div>
-          <dt class="text-xs text-slate-500 dark:text-slate-400">Charge</dt>
+          <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.charge_label" }}</dt>
           <dd class="font-semibold tabular-nums">{{.ChargeW}} <span class="text-xs font-normal text-slate-400">W</span></dd>
         </div>
         <div class="col-span-2 border-t border-slate-100 pt-3 dark:border-slate-800">
           <div class="flex items-center justify-between">
-            <dt class="text-xs text-slate-500 dark:text-slate-400">Home battery</dt>
+            <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.battery_label" }}</dt>
             <dd class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">{{.BatteryW}} W &middot; {{.BatterySoC}}%</dd>
           </div>
           <div class="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" role="progressbar" aria-valuenow="{{.BatterySoC}}" aria-valuemin="0" aria-valuemax="100" aria-label="Home battery state of charge">
@@ -110,11 +110,11 @@
 
     {{- /* Vehicle: SoC progress toward the 80% surplus cap. */ -}}
     <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Vehicle</h2>
+      <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t .Lang "status.vehicle_heading" }}</h2>
 
       <div class="mt-3 flex items-baseline gap-2">
         <p class="text-3xl font-bold tabular-nums">{{.VehicleSoC}}<span class="ml-0.5 text-lg font-semibold text-slate-400">%</span></p>
-        <p class="text-xs text-slate-400 dark:text-slate-500">Vehicle SoC</p>
+        <p class="text-xs text-slate-400 dark:text-slate-500">{{ t .Lang "status.vehicle_soc_label" }}</p>
       </div>
 
       <div class="relative mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" role="progressbar" aria-valuenow="{{.VehicleSoC}}" aria-valuemin="0" aria-valuemax="100" aria-label="Vehicle state of charge">
@@ -122,19 +122,19 @@
       </div>
       <div class="relative mt-1 h-4 text-[0.6875rem] text-slate-400 dark:text-slate-500">
         <span class="absolute left-0">0%</span>
-        <span class="absolute left-[80%] -translate-x-1/2 font-medium text-slate-500 dark:text-slate-400">80% cap</span>
+        <span class="absolute left-[80%] -translate-x-1/2 font-medium text-slate-500 dark:text-slate-400">{{ t .Lang "status.cap_badge" }}</span>
       </div>
 
       <div class="mt-4 flex flex-wrap gap-2">
         <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {{if .Connected}}bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300{{else}}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400{{end}}">
           <svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7V3m6 4V3M7 7h10v4a5 5 0 0 1-10 0V7Zm5 9v5"/></svg>
-          {{if .Connected}}Connected{{else}}Unplugged{{end}}
+          {{if .Connected}}{{ t .Lang "status.connected" }}{{else}}{{ t .Lang "status.unplugged" }}{{end}}
         </span>
         <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium {{if .Charging}}bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300{{else}}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400{{end}}">
-          {{if .Charging}}Charging{{else}}Idle{{end}}
+          {{if .Charging}}{{ t .Lang "state.charging" }}{{else}}{{ t .Lang "state.idle" }}{{end}}
         </span>
         {{if .Ready}}
-        <span class="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-300">Ready</span>
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-medium text-sky-800 dark:bg-sky-500/15 dark:text-sky-300">{{ t .Lang "status.ready_badge" }}</span>
         {{end}}
       </div>
     </section>
@@ -142,20 +142,20 @@
 
   {{- /* Health: connection indicators. */ -}}
   <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
-    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Health</h2>
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t .Lang "status.health_heading" }}</h2>
     <dl class="mt-3 grid grid-cols-2 gap-3">
       <div class="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
         <span class="h-2.5 w-2.5 shrink-0 rounded-full {{if .BrokerConnected}}bg-emerald-500{{else}}bg-rose-500{{end}}" aria-hidden="true"></span>
         <div class="min-w-0">
-          <dt class="text-sm font-medium">MQTT broker</dt>
-          <dd class="text-xs {{if .BrokerConnected}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .BrokerConnected}}Connected{{else}}Disconnected{{end}}</dd>
+          <dt class="text-sm font-medium">{{ t .Lang "status.mqtt_broker_label" }}</dt>
+          <dd class="text-xs {{if .BrokerConnected}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .BrokerConnected}}{{ t .Lang "status.connected" }}{{else}}{{ t .Lang "status.disconnected" }}{{end}}</dd>
         </div>
       </div>
       <div class="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
         <span class="h-2.5 w-2.5 shrink-0 rounded-full {{if .Online}}bg-emerald-500{{else}}bg-rose-500{{end}}" aria-hidden="true"></span>
         <div class="min-w-0">
-          <dt class="text-sm font-medium">evcc</dt>
-          <dd class="text-xs {{if .Online}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .Online}}Online{{else}}Offline{{end}}</dd>
+          <dt class="text-sm font-medium">{{ t .Lang "status.evcc_label" }}</dt>
+          <dd class="text-xs {{if .Online}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .Online}}{{ t .Lang "status.online_state" }}{{else}}{{ t .Lang "status.offline_state" }}{{end}}</dd>
         </div>
       </div>
     </dl>
