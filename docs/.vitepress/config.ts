@@ -7,16 +7,18 @@ export default defineConfig({
   lastUpdated: true,
   cleanUrls: true,
 
+  // The legacy docs/install.md and docs/mqtt.md remain as GitHub-rendered
+  // developer references (linked from README/CONTRIBUTING); their operator-facing
+  // content is migrated into guide/ and reference/, so exclude the originals from
+  // the published site to avoid duplicate pages and their repo-relative links.
+  srcExclude: ['install.md', 'mqtt.md'],
+
   themeConfig: {
     logo: { src: '/logo.svg', alt: 'wha' },
 
     nav: [
       { text: 'Guide', link: '/guide/introduction', activeMatch: '/guide/' },
-      { text: 'Reference', link: '/reference/configuration', activeMatch: '/reference/' },
-      {
-        icon: 'github',
-        link: 'https://github.com/Joessst-Dev/wallbox-homeautomation-go'
-      }
+      { text: 'Reference', link: '/reference/configuration', activeMatch: '/reference/' }
     ],
 
     sidebar: {
@@ -71,5 +73,7 @@ export default defineConfig({
     }
   },
 
-  head: [['link', { rel: 'icon', href: '/wallbox-homeautomation-go/favicon.ico' }]]
+  head: [
+    ['link', { rel: 'icon', type: 'image/svg+xml', href: '/wallbox-homeautomation-go/favicon.svg' }]
+  ]
 })

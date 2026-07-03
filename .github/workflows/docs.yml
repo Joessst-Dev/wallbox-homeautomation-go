@@ -12,10 +12,11 @@ concurrency:
   group: pages
   cancel-in-progress: false
 
+# Least privilege at the workflow level; the deploy job elevates only what it
+# needs (see below). The build job just checks out, builds, and uploads the
+# artifact — read access is enough.
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 jobs:
   build:
@@ -41,9 +42,6 @@ jobs:
         working-directory: docs
         run: npm run docs:build
 
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
@@ -54,6 +52,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Only the deploy job needs to write Pages / mint the OIDC token.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
