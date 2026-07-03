@@ -77,6 +77,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 			Timers:      resetTimers(),
 			DesiredMode: ModeOff,
 			Reason:      "stale data / disconnected → off",
+			ReasonCode:  ReasonStaleOff,
 		}
 	}
 
@@ -93,6 +94,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 				Timers:      resetTimers(),
 				DesiredMode: ModeOff,
 				Reason:      "manual override: off",
+				ReasonCode:  ReasonOverrideOff,
 			}
 		case OverrideForceOn:
 			return Decision{
@@ -100,6 +102,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 				Timers:      resetTimers(),
 				DesiredMode: effectiveMode(in, cfg),
 				Reason:      "manual override: on",
+				ReasonCode:  ReasonOverrideOn,
 			}
 		}
 	}
@@ -111,6 +114,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 			Timers:      resetTimers(),
 			DesiredMode: ModeOff,
 			Reason:      "waiting for initial data",
+			ReasonCode:  ReasonAwaitingData,
 		}
 	}
 
@@ -123,6 +127,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 			Timers:      resetTimers(),
 			DesiredMode: ModeOff,
 			Reason:      "no vehicle connected",
+			ReasonCode:  ReasonNoVehicle,
 		}
 	}
 
@@ -133,6 +138,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 			Timers:      resetTimers(),
 			DesiredMode: ModeOff,
 			Reason:      "SoC >= cap",
+			ReasonCode:  ReasonSoCCap,
 		}
 	}
 	if st == StateSocReached && in.VehicleSoC >= cfg.SoCResumeBelow {
@@ -141,6 +147,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 			Timers:      resetTimers(),
 			DesiredMode: ModeOff,
 			Reason:      "SoC latch (>= resumeBelow)",
+			ReasonCode:  ReasonSoCLatch,
 		}
 	}
 
@@ -164,6 +171,7 @@ func decideFromIdle(now time.Time, s float64, timers Timers, cfg config.Control,
 				Timers:      Timers{CrossedUpAt: now},
 				DesiredMode: ModeOff,
 				Reason:      "surplus rising, dwell started",
+				ReasonCode:  ReasonSurplusDwellStart,
 			}
 		}
 		if now.Sub(timers.CrossedUpAt) >= cfg.StartDwell {
@@ -172,6 +180,7 @@ func decideFromIdle(now time.Time, s float64, timers Timers, cfg config.Control,
 				Timers:      resetTimers(),
 				DesiredMode: enable,
 				Reason:      "surplus sustained → charging",
+				ReasonCode:  ReasonSurplusCharging,
 			}
 		}
 		return Decision{
@@ -179,6 +188,7 @@ func decideFromIdle(now time.Time, s float64, timers Timers, cfg config.Control,
 			Timers:      Timers{CrossedUpAt: timers.CrossedUpAt},
 			DesiredMode: ModeOff,
 			Reason:      "surplus dwell pending",
+			ReasonCode:  ReasonSurplusDwellPending,
 		}
 	}
 	return Decision{
@@ -186,6 +196,7 @@ func decideFromIdle(now time.Time, s float64, timers Timers, cfg config.Control,
 		Timers:      resetTimers(),
 		DesiredMode: ModeOff,
 		Reason:      "surplus below start",
+		ReasonCode:  ReasonSurplusBelowStart,
 	}
 }
 
@@ -199,6 +210,7 @@ func decideFromCharging(now time.Time, s float64, timers Timers, cfg config.Cont
 				Timers:      Timers{CrossedDownAt: now},
 				DesiredMode: enable,
 				Reason:      "surplus dropping, stop dwell started",
+				ReasonCode:  ReasonStopDwellStart,
 			}
 		}
 		if now.Sub(timers.CrossedDownAt) >= cfg.StopDwell {
@@ -207,6 +219,7 @@ func decideFromCharging(now time.Time, s float64, timers Timers, cfg config.Cont
 				Timers:      resetTimers(),
 				DesiredMode: ModeOff,
 				Reason:      "surplus low sustained → stop",
+				ReasonCode:  ReasonStopLow,
 			}
 		}
 		return Decision{
@@ -214,6 +227,7 @@ func decideFromCharging(now time.Time, s float64, timers Timers, cfg config.Cont
 			Timers:      Timers{CrossedDownAt: timers.CrossedDownAt},
 			DesiredMode: enable,
 			Reason:      "stop dwell pending",
+			ReasonCode:  ReasonStopDwellPending,
 		}
 	}
 	return Decision{
@@ -221,5 +235,6 @@ func decideFromCharging(now time.Time, s float64, timers Timers, cfg config.Cont
 		Timers:      resetTimers(),
 		DesiredMode: enable,
 		Reason:      "charging",
+		ReasonCode:  ReasonCharging,
 	}
 }

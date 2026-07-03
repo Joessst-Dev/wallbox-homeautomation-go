@@ -78,6 +78,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateFailSafe))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonStaleOff))
 		})
 
 		It("stays off until ready", func() {
@@ -88,6 +89,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonAwaitingData))
 		})
 
 		It("prefers fail-safe over not-ready when both hold", func() {
@@ -96,6 +98,7 @@ var _ = Describe("Decide", func() {
 			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
 
 			Expect(d.State).To(Equal(controller.StateFailSafe))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonStaleOff))
 		})
 	})
 
@@ -110,6 +113,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModePV))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOn))
 		})
 
 		It("ForceOff disables charging despite high surplus", func() {
@@ -122,6 +126,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOff))
 		})
 
 		It("falls back to automatic logic when the override has expired", func() {
@@ -134,6 +139,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusBelowStart))
 		})
 
 		It("honors a not-yet-expired override expiry", func() {
@@ -145,6 +151,7 @@ var _ = Describe("Decide", func() {
 			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
 
 			Expect(d.State).To(Equal(controller.StateCharging))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOn))
 		})
 
 		It("uses automatic logic under OverrideAuto", func() {
@@ -155,6 +162,7 @@ var _ = Describe("Decide", func() {
 			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
 
 			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusBelowStart))
 		})
 
 		It("fail-safe takes precedence over an active override", func() {
@@ -165,6 +173,7 @@ var _ = Describe("Decide", func() {
 			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
 
 			Expect(d.State).To(Equal(controller.StateFailSafe))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonStaleOff))
 		})
 
 		It("ForceOn kick-starts charging even before any data is ready (breaks first-run deadlock)", func() {
@@ -174,6 +183,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModePV))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOn))
 		})
 
 		It("ForceOff turns off even before any data is ready (off is always safe)", func() {
@@ -183,6 +193,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOff))
 		})
 
 		It("stays off when not ready under Auto (override does not apply)", func() {
@@ -192,6 +203,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonAwaitingData))
 		})
 	})
 
@@ -211,6 +223,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonNoVehicle))
 		})
 
 		It("an active ForceOn override still wins over the connection gate", func() {
@@ -222,6 +235,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModePV))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOn))
 		})
 
 		It("resumes normal dwell behavior when a vehicle is plugged in with surplus present", func() {
@@ -233,6 +247,7 @@ var _ = Describe("Decide", func() {
 			d0 := controller.Decide(clock.Now(), disconnected, controller.StateIdle, controller.Timers{}, cfg)
 			Expect(d0.State).To(Equal(controller.StateIdle))
 			Expect(d0.Timers).To(Equal(controller.Timers{}))
+			Expect(d0.ReasonCode).To(Equal(controller.ReasonNoVehicle))
 
 			// Vehicle now plugged in: surplus path arms the start dwell.
 			connected := baseInputs()
@@ -242,12 +257,14 @@ var _ = Describe("Decide", func() {
 			Expect(d1.State).To(Equal(controller.StateSurplusPending))
 			Expect(d1.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d1.Timers.CrossedUpAt).To(Equal(t0))
+			Expect(d1.ReasonCode).To(Equal(controller.ReasonSurplusDwellStart))
 
 			// After the start dwell elapses, it charges.
 			clock.Advance(60 * time.Second)
 			d2 := controller.Decide(clock.Now(), connected, d1.State, d1.Timers, cfg)
 			Expect(d2.State).To(Equal(controller.StateCharging))
 			Expect(d2.DesiredMode).To(Equal(config.EnableModePV))
+			Expect(d2.ReasonCode).To(Equal(controller.ReasonSurplusCharging))
 		})
 	})
 
@@ -262,6 +279,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateSocReached))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCCap))
 		})
 
 		It("latches off at 79 (below cap but >= resumeBelow)", func() {
@@ -274,6 +292,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateSocReached))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCLatch))
 		})
 
 		It("becomes eligible to charge again once SoC drops below resumeBelow", func() {
@@ -287,6 +306,7 @@ var _ = Describe("Decide", func() {
 			// Leaves the latch; re-enters the normal surplus path (start dwell).
 			Expect(d.State).To(Equal(controller.StateSurplusPending))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusDwellStart))
 		})
 
 		It("does not latch from a non-SocReached state when below resumeBelow", func() {
@@ -297,6 +317,7 @@ var _ = Describe("Decide", func() {
 			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
 
 			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusBelowStart))
 		})
 	})
 
@@ -312,6 +333,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers.CrossedUpAt).To(Equal(t0))
 			Expect(d.Timers.CrossedDownAt).To(BeZero())
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusDwellStart))
 		})
 
 		It("stays pending while the start dwell has not elapsed", func() {
@@ -326,6 +348,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateSurplusPending))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers.CrossedUpAt).To(Equal(t0)) // unchanged
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusDwellPending))
 		})
 
 		It("starts charging once the start dwell elapses", func() {
@@ -340,6 +363,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModePV))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusCharging))
 		})
 
 		It("resets the dwell when surplus drops back below start before charging", func() {
@@ -354,6 +378,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusBelowStart))
 		})
 	})
 
@@ -367,6 +392,7 @@ var _ = Describe("Decide", func() {
 			Expect(d1.State).To(Equal(controller.StateStopPending))
 			Expect(d1.DesiredMode).To(Equal(config.EnableModePV)) // still charging
 			Expect(d1.Timers.CrossedDownAt).To(Equal(t0))
+			Expect(d1.ReasonCode).To(Equal(controller.ReasonStopDwellStart))
 
 			// Surplus recovers within the dwell window: cancel the pending stop.
 			clock.Advance(30 * time.Second)
@@ -377,6 +403,7 @@ var _ = Describe("Decide", func() {
 			Expect(d2.State).To(Equal(controller.StateCharging))
 			Expect(d2.DesiredMode).To(Equal(config.EnableModePV))
 			Expect(d2.Timers).To(Equal(controller.Timers{})) // anti-flap: timer cleared
+			Expect(d2.ReasonCode).To(Equal(controller.ReasonCharging))
 		})
 
 		It("stays in stop_pending while the stop dwell has not elapsed", func() {
@@ -391,6 +418,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateStopPending))
 			Expect(d.DesiredMode).To(Equal(config.EnableModePV)) // keep charging
 			Expect(d.Timers.CrossedDownAt).To(Equal(t0))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonStopDwellPending))
 		})
 
 		It("stops once a sustained drop exceeds the stop dwell", func() {
@@ -405,6 +433,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonStopLow))
 		})
 	})
 
@@ -417,6 +446,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModePV))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonCharging))
 		})
 
 		It("does not start a new session from idle", func() {
@@ -428,6 +458,7 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
 			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusBelowStart))
 		})
 	})
 
@@ -444,6 +475,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusCharging))
 		})
 	})
 
@@ -458,6 +490,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOn))
 		})
 
 		It("automatic start uses the runtime ChargePower", func() {
@@ -472,6 +505,7 @@ var _ = Describe("Decide", func() {
 
 			Expect(d.State).To(Equal(controller.StateCharging))
 			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusCharging))
 		})
 
 		It("falls back to the config default when ChargePower is unset", func() {
@@ -481,6 +515,7 @@ var _ = Describe("Decide", func() {
 			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
 
 			Expect(d.DesiredMode).To(Equal(config.EnableModePV))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOn))
 		})
 	})
 })

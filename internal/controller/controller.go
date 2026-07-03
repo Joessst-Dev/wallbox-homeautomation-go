@@ -473,6 +473,7 @@ type StatusView struct {
 	State         State
 	DesiredMode   string
 	Reason        string
+	ReasonCode    ReasonCode
 	Override      Override
 	OverrideUntil time.Time
 	CapBypass     bool
@@ -494,6 +495,7 @@ func (c *Controller) Status() StatusView {
 		State:         c.state,
 		DesiredMode:   c.lastDecision.DesiredMode,
 		Reason:        c.lastDecision.Reason,
+		ReasonCode:    c.lastDecision.ReasonCode,
 		Override:      c.ctrl.Override,
 		OverrideUntil: c.ctrl.OverrideUntil,
 		CapBypass:     c.ctrl.CapBypass,

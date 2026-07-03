@@ -19,6 +19,7 @@ import (
 type StatusVM struct {
 	State       string `json:"state"`
 	Reason      string `json:"reason"`
+	ReasonCode  string `json:"reasonCode"`
 	DesiredMode string `json:"desiredMode"`
 	Override    string `json:"override"`
 
@@ -85,6 +86,7 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 	vm := StatusVM{
 		State:       string(v.State),
 		Reason:      v.Reason,
+		ReasonCode:  string(v.ReasonCode),
 		DesiredMode: v.DesiredMode,
 		Override:    string(v.Override),
 
