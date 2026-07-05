@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"strconv"
 	"sync"
@@ -152,6 +153,12 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 
 	c.mu.Lock()
 	ctrl := c.ctrl
+	// ctrl is a shallow struct copy, so its per-profile maps still alias c.ctrl's
+	// live storage. Clone them under the lock before reading them unlocked below
+	// (via latchOverrides in InputsFromSnapshot), so a concurrent Set* write can't
+	// trigger a fatal "concurrent map read and map write". maps.Clone is nil-safe.
+	ctrl.StartThresholdW = maps.Clone(c.ctrl.StartThresholdW)
+	ctrl.TargetSoC = maps.Clone(c.ctrl.TargetSoC)
 	prevState, prevTimers := c.state, c.timers
 	c.mu.Unlock()
 

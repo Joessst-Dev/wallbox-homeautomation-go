@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -460,6 +461,48 @@ var _ = Describe("Controller integration (real store)", func() {
 			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplus)).To(Succeed())
 			Expect(ctrl.SetStartThreshold(2500)).To(MatchError(ErrInvalidStartThreshold))
 			Expect(ctrl.SetTargetSoC(90)).To(MatchError(ErrInvalidTargetSoC))
+		})
+
+		It("is race-free when Set* runs concurrently with the decision loop", func() {
+			// The per-profile maps are read unlocked by tick() (via latchOverrides in
+			// InputsFromSnapshot). Without the clone-under-lock in tick(), a web-driven
+			// SetStartThreshold/SetTargetSoC mutating those maps concurrently is a data
+			// race — a fatal "concurrent map read and map write" that crashes the whole
+			// control loop. Spin tick() (the loop's unlocked reader) against a burst of
+			// setters (the locked writers) so their windows reliably overlap; this fails
+			// under `go test -race` unless the maps are cloned before escaping the lock.
+			//
+			// Uses an in-memory fakeRecorder rather than the real SQLite store on
+			// purpose: the DB's own serialization would otherwise establish enough
+			// happens-before between tick and Set* to mask the map race from -race.
+			rec := &fakeRecorder{}
+			rctrl := New(cfg, cmd, snaps, rec, clk, discardLogger())
+			Expect(rctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			snaps.set(surplusSnap(t0, -3000)) // healthy → tick reads the latch overrides each cycle
+
+			var wg sync.WaitGroup
+			stop := make(chan struct{})
+			wg.Add(1)
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						rctrl.tick(ctx, t0)
+					}
+				}
+			}()
+
+			for i := 0; i < 10000; i++ {
+				Expect(rctrl.SetStartThreshold(float64(1500 + (i%10)*100))).To(Succeed())
+				Expect(rctrl.SetTargetSoC(50 + (i%6)*10)).To(Succeed())
+			}
+
+			close(stop)
+			wg.Wait()
 		})
 
 		It("ignores a TargetSoC left over from a latch session after switching back to surplus", func() {
