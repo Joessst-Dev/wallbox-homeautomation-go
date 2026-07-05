@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"path/filepath"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -403,11 +404,12 @@ var _ = Describe("Controller integration (real store)", func() {
 			Expect(ctrl.SetStartThreshold(2500)).To(Succeed())
 			Expect(ctrl.SetTargetSoC(90)).To(Succeed())
 
-			// All three land in the settings KV table.
+			// All three land in the settings KV table, the latter two namespaced
+			// under the active (power_latch) profile.
 			for key, want := range map[string]string{
-				"auto_profile":      config.AutoProfilePowerLatch,
-				"start_threshold_w": "2500",
-				"target_soc":        "90",
+				"auto_profile":                  config.AutoProfilePowerLatch,
+				"start_threshold_w:power_latch": "2500",
+				"target_soc:power_latch":        "90",
 			} {
 				v, ok, err := st.GetSetting(ctx, key)
 				Expect(err).NotTo(HaveOccurred())
@@ -426,10 +428,89 @@ var _ = Describe("Controller integration (real store)", func() {
 			Expect(fresh.Status().TargetSoC).To(Equal(90))
 		})
 
+		It("keeps each latch profile's start threshold and target SoC independent across switches", func() {
+			// The leftover-target bug (fixed in #48, made structurally impossible
+			// here) came from a single global setting shared across profiles. Prove
+			// each latch profile now remembers its own value.
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(2500)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(90)).To(Succeed())
+
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplusLatch)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(4000)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(70)).To(Succeed())
+			Expect(ctrl.Status().StartThresholdW).To(Equal(4000.0))
+			Expect(ctrl.Status().TargetSoC).To(Equal(70))
+
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.Status().StartThresholdW).To(Equal(2500.0))
+			Expect(ctrl.Status().TargetSoC).To(Equal(90))
+
+			// A fresh controller restores both profiles' values independently.
+			fresh := New(cfg, &fakeCommander{}, snaps, st, clk, discardLogger())
+			fresh.loadAutoProfile(ctx)
+			fresh.loadStartThreshold(ctx)
+			fresh.loadTargetSoC(ctx)
+			Expect(fresh.Status().StartThresholdW).To(Equal(2500.0))
+			Expect(fresh.Status().TargetSoC).To(Equal(90))
+			Expect(fresh.ctrl.StartThresholdW[config.AutoProfileSurplusLatch]).To(Equal(4000.0))
+			Expect(fresh.ctrl.TargetSoC[config.AutoProfileSurplusLatch]).To(Equal(70))
+		})
+
+		It("rejects SetStartThreshold/SetTargetSoC while the active profile is surplus", func() {
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplus)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(2500)).To(MatchError(ErrInvalidStartThreshold))
+			Expect(ctrl.SetTargetSoC(90)).To(MatchError(ErrInvalidTargetSoC))
+		})
+
+		It("is race-free when Set* runs concurrently with the decision loop", func() {
+			// The per-profile maps are read unlocked by tick() (via latchOverrides in
+			// InputsFromSnapshot). Without the clone-under-lock in tick(), a web-driven
+			// SetStartThreshold/SetTargetSoC mutating those maps concurrently is a data
+			// race — a fatal "concurrent map read and map write" that crashes the whole
+			// control loop. Spin tick() (the loop's unlocked reader) against a burst of
+			// setters (the locked writers) so their windows reliably overlap; this fails
+			// under `go test -race` unless the maps are cloned before escaping the lock.
+			//
+			// Uses an in-memory fakeRecorder rather than the real SQLite store on
+			// purpose: the DB's own serialization would otherwise establish enough
+			// happens-before between tick and Set* to mask the map race from -race.
+			rec := &fakeRecorder{}
+			rctrl := New(cfg, cmd, snaps, rec, clk, discardLogger())
+			Expect(rctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			snaps.set(surplusSnap(t0, -3000)) // healthy → tick reads the latch overrides each cycle
+
+			var wg sync.WaitGroup
+			stop := make(chan struct{})
+			wg.Add(1)
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+				for {
+					select {
+					case <-stop:
+						return
+					default:
+						rctrl.tick(ctx, t0)
+					}
+				}
+			}()
+
+			for i := 0; i < 10000; i++ {
+				Expect(rctrl.SetStartThreshold(float64(1500 + (i%10)*100))).To(Succeed())
+				Expect(rctrl.SetTargetSoC(50 + (i%6)*10)).To(Succeed())
+			}
+
+			close(stop)
+			wg.Wait()
+		})
+
 		It("ignores a TargetSoC left over from a latch session after switching back to surplus", func() {
-			// Regression: TargetSoC is a global persisted setting that SetAutoProfile
-			// does not reset, so a leftover latch target must not raise the SoC cap
-			// once the default surplus profile is active again.
+			// Regression: pre-#51, TargetSoC was a single global persisted setting
+			// that SetAutoProfile did not reset, so a leftover latch target could
+			// leak into the surplus profile. #51 made this structurally impossible
+			// (per-profile storage); this case now also verifies SetTargetSoC can no
+			// longer even write a value while surplus is active.
 			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
 			Expect(ctrl.SetTargetSoC(100)).To(Succeed()) // "charge fully before a trip"
 			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplus)).To(Succeed())

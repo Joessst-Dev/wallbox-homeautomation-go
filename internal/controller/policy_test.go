@@ -322,9 +322,10 @@ var _ = Describe("Decide", func() {
 		})
 
 		It("ignores a leftover TargetSoC under the default surplus profile and caps at cfg.SoCCap", func() {
-			// Regression: TargetSoC is a global persisted setting not reset when
-			// switching profiles. A 90% target left over from a previous latch
-			// session must not raise the safety cap once back on surplus.
+			// Regression: at the Inputs level, a stale TargetSoC can still arrive
+			// scalar (e.g. from a caller bypassing the per-profile ControlState
+			// storage). A 90% target here must not raise the safety cap once the
+			// profile is surplus.
 			in := baseInputs()
 			in.AutoProfile = config.AutoProfileSurplus // explicit surplus (as after a profile switch)
 			in.TargetSoC = 90                          // stale leftover from a latch session

@@ -31,6 +31,8 @@ func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ctrl
 		!fresh(s.Grid) ||
 		!fresh(s.PV)
 
+	thresholdW, targetSoC := ctrl.latchOverrides(cfg)
+
 	return Inputs{
 		GridW:                s.Grid.Value,
 		PVW:                  s.PV.Value,
@@ -50,7 +52,7 @@ func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ctrl
 		OverrideCapBypassSoC: ctrl.CapBypassSoC,
 		ChargePower:          ctrl.ChargePower,
 		AutoProfile:          ctrl.AutoProfile,
-		StartThresholdW:      ctrl.StartThresholdW,
-		TargetSoC:            ctrl.TargetSoC,
+		StartThresholdW:      thresholdW,
+		TargetSoC:            targetSoC,
 	}
 }

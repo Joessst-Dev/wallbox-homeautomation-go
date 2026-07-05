@@ -6,7 +6,11 @@
 // clock, or a network.
 package controller
 
-import "time"
+import (
+	"time"
+
+	"github.com/Joessst-Dev/wallbox-homeautomation-go/internal/config"
+)
 
 // State is the controller's finite-state-machine position.
 type State string
@@ -144,12 +148,28 @@ type ControlState struct {
 	// AutoProfilePowerLatch, or AutoProfileSurplusLatch). Empty falls back to
 	// cfg.AutoProfile.
 	AutoProfile string
-	// StartThresholdW overrides cfg.StartThresholdW for the active profile's
-	// start trigger. Zero falls back to cfg.StartThresholdW.
-	StartThresholdW float64
-	// TargetSoC overrides cfg.SoCCap as the stop target for the active profile.
-	// Zero falls back to cfg.SoCCap.
-	TargetSoC int
+	// StartThresholdW holds each latch profile's own start-trigger override,
+	// keyed by profile name. A missing/zero entry falls back to
+	// cfg.StartThresholdW. Only latch profiles (AutoProfilePowerLatch,
+	// AutoProfileSurplusLatch) ever get an entry.
+	StartThresholdW map[string]float64
+	// TargetSoC holds each latch profile's own stop-target override, keyed by
+	// profile name. A missing/zero entry falls back to cfg.SoCCap. Only latch
+	// profiles ever get an entry.
+	TargetSoC map[string]int
+}
+
+// latchOverrides resolves the effective auto-charge profile (cs.AutoProfile,
+// falling back to cfg.AutoProfile) and returns that profile's own
+// start-threshold/target-SoC overrides. A nil map or missing entry reads as
+// the zero value, so the existing effective* config-fallback in policy.go
+// still applies unchanged.
+func (cs ControlState) latchOverrides(cfg config.Control) (thresholdW float64, targetSoC int) {
+	profile := cs.AutoProfile
+	if profile == "" {
+		profile = cfg.AutoProfile
+	}
+	return cs.StartThresholdW[profile], cs.TargetSoC[profile]
 }
 
 // Inputs is a snapshot of all metrics and flags the decision engine consumes.
