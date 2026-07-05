@@ -308,3 +308,7 @@ model and a possible finer two-user hardening split.
 GitHub Actions: CI (lint/test/cross-compile) on PRs and `main`; a multi-arch image
 (`ghcr.io/joessst-dev/wha`) on pushes to `main` (`:edge`, `:sha`); and GoReleaser on `v*`
 tags (binaries + `:latest`/semver images). See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+Released under the [MIT License](LICENSE).
