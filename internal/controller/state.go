@@ -85,6 +85,30 @@ const (
 	ReasonCharging ReasonCode = "charging"
 )
 
+// reasonText maps each ReasonCode to its human-readable English audit-log prose.
+// Holding the prose here — instead of duplicating it at every Decide branch —
+// makes ReasonCode the single source of truth: a branch sets only the code (via
+// newDecision) and the Reason string follows, so the two cannot drift as
+// branches are added or edited. A completeness test asserts every declared code
+// has a non-empty entry.
+var reasonText = map[ReasonCode]string{
+	ReasonStaleOff:            "stale data / disconnected → off",
+	ReasonOverrideOff:         "manual override: off",
+	ReasonOverrideOn:          "manual override: on",
+	ReasonAwaitingData:        "waiting for initial data",
+	ReasonNoVehicle:           "no vehicle connected",
+	ReasonSoCCap:              "SoC >= cap",
+	ReasonSoCLatch:            "SoC latch (>= resumeBelow)",
+	ReasonSurplusDwellStart:   "surplus rising, dwell started",
+	ReasonSurplusCharging:     "surplus sustained → charging",
+	ReasonSurplusDwellPending: "surplus dwell pending",
+	ReasonSurplusBelowStart:   "surplus below start",
+	ReasonStopDwellStart:      "surplus dropping, stop dwell started",
+	ReasonStopLow:             "surplus low sustained → stop",
+	ReasonStopDwellPending:    "stop dwell pending",
+	ReasonCharging:            "charging",
+}
+
 // ControlState is the operator-settable runtime state layered on top of the
 // static config. It is the bundle the loop passes through the pure boundary
 // (InputsFromSnapshot) each tick.

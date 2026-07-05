@@ -56,6 +56,19 @@ func resetTimers() Timers {
 	return Timers{}
 }
 
+// newDecision builds a Decision, deriving the human Reason from code via
+// reasonText so ReasonCode is the single source of truth: a branch supplies
+// only the code and the audit-log prose follows, so the two cannot drift.
+func newDecision(state State, timers Timers, mode string, code ReasonCode) Decision {
+	return Decision{
+		State:       state,
+		Timers:      timers,
+		DesiredMode: mode,
+		Reason:      reasonText[code],
+		ReasonCode:  code,
+	}
+}
+
 // overrideActive reports whether a non-auto override is currently in force,
 // honoring its expiry. A zero OverrideUntil means the override never expires.
 func overrideActive(now time.Time, in Inputs) bool {
@@ -72,13 +85,7 @@ func overrideActive(now time.Time, in Inputs) bool {
 func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Control) Decision {
 	// 1. Fail-safe: stale data or disconnected broker forces off.
 	if in.Stale {
-		return Decision{
-			State:       StateFailSafe,
-			Timers:      resetTimers(),
-			DesiredMode: ModeOff,
-			Reason:      "stale data / disconnected → off",
-			ReasonCode:  ReasonStaleOff,
-		}
+		return newDecision(StateFailSafe, resetTimers(), ModeOff, ReasonStaleOff)
 	}
 
 	// 2. Manual override (respecting expiry). Evaluated before the readiness
@@ -89,66 +96,30 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 	if overrideActive(now, in) {
 		switch in.Override {
 		case OverrideForceOff:
-			return Decision{
-				State:       StateIdle,
-				Timers:      resetTimers(),
-				DesiredMode: ModeOff,
-				Reason:      "manual override: off",
-				ReasonCode:  ReasonOverrideOff,
-			}
+			return newDecision(StateIdle, resetTimers(), ModeOff, ReasonOverrideOff)
 		case OverrideForceOn:
-			return Decision{
-				State:       StateCharging,
-				Timers:      resetTimers(),
-				DesiredMode: effectiveMode(in, cfg),
-				Reason:      "manual override: on",
-				ReasonCode:  ReasonOverrideOn,
-			}
+			return newDecision(StateCharging, resetTimers(), effectiveMode(in, cfg), ReasonOverrideOn)
 		}
 	}
 
 	// 3. Not ready: we have not yet seen all required metrics.
 	if !in.Ready {
-		return Decision{
-			State:       StateIdle,
-			Timers:      resetTimers(),
-			DesiredMode: ModeOff,
-			Reason:      "waiting for initial data",
-			ReasonCode:  ReasonAwaitingData,
-		}
+		return newDecision(StateIdle, resetTimers(), ModeOff, ReasonAwaitingData)
 	}
 
 	// 4. No vehicle connected: never command charging under automatic control.
 	// An active override was already handled above and returned early, so
 	// reaching here means automatic control is in effect.
 	if !in.Connected {
-		return Decision{
-			State:       StateIdle,
-			Timers:      resetTimers(),
-			DesiredMode: ModeOff,
-			Reason:      "no vehicle connected",
-			ReasonCode:  ReasonNoVehicle,
-		}
+		return newDecision(StateIdle, resetTimers(), ModeOff, ReasonNoVehicle)
 	}
 
 	// 5. SoC cap (latched).
 	if in.VehicleSoC >= cfg.SoCCap {
-		return Decision{
-			State:       StateSocReached,
-			Timers:      resetTimers(),
-			DesiredMode: ModeOff,
-			Reason:      "SoC >= cap",
-			ReasonCode:  ReasonSoCCap,
-		}
+		return newDecision(StateSocReached, resetTimers(), ModeOff, ReasonSoCCap)
 	}
 	if st == StateSocReached && in.VehicleSoC >= cfg.SoCResumeBelow {
-		return Decision{
-			State:       StateSocReached,
-			Timers:      resetTimers(),
-			DesiredMode: ModeOff,
-			Reason:      "SoC latch (>= resumeBelow)",
-			ReasonCode:  ReasonSoCLatch,
-		}
+		return newDecision(StateSocReached, resetTimers(), ModeOff, ReasonSoCLatch)
 	}
 
 	// 6. Surplus hysteresis + dwell (the normal path).
@@ -166,38 +137,14 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 func decideFromIdle(now time.Time, s float64, timers Timers, cfg config.Control, enable string) Decision {
 	if s >= cfg.StartThresholdW {
 		if timers.CrossedUpAt.IsZero() {
-			return Decision{
-				State:       StateSurplusPending,
-				Timers:      Timers{CrossedUpAt: now},
-				DesiredMode: ModeOff,
-				Reason:      "surplus rising, dwell started",
-				ReasonCode:  ReasonSurplusDwellStart,
-			}
+			return newDecision(StateSurplusPending, Timers{CrossedUpAt: now}, ModeOff, ReasonSurplusDwellStart)
 		}
 		if now.Sub(timers.CrossedUpAt) >= cfg.StartDwell {
-			return Decision{
-				State:       StateCharging,
-				Timers:      resetTimers(),
-				DesiredMode: enable,
-				Reason:      "surplus sustained → charging",
-				ReasonCode:  ReasonSurplusCharging,
-			}
+			return newDecision(StateCharging, resetTimers(), enable, ReasonSurplusCharging)
 		}
-		return Decision{
-			State:       StateSurplusPending,
-			Timers:      Timers{CrossedUpAt: timers.CrossedUpAt},
-			DesiredMode: ModeOff,
-			Reason:      "surplus dwell pending",
-			ReasonCode:  ReasonSurplusDwellPending,
-		}
+		return newDecision(StateSurplusPending, Timers{CrossedUpAt: timers.CrossedUpAt}, ModeOff, ReasonSurplusDwellPending)
 	}
-	return Decision{
-		State:       StateIdle,
-		Timers:      resetTimers(),
-		DesiredMode: ModeOff,
-		Reason:      "surplus below start",
-		ReasonCode:  ReasonSurplusBelowStart,
-	}
+	return newDecision(StateIdle, resetTimers(), ModeOff, ReasonSurplusBelowStart)
 }
 
 // decideFromCharging handles ticks where we are currently charging (or pending
@@ -205,36 +152,12 @@ func decideFromIdle(now time.Time, s float64, timers Timers, cfg config.Control,
 func decideFromCharging(now time.Time, s float64, timers Timers, cfg config.Control, enable string) Decision {
 	if s < cfg.StopThresholdW {
 		if timers.CrossedDownAt.IsZero() {
-			return Decision{
-				State:       StateStopPending,
-				Timers:      Timers{CrossedDownAt: now},
-				DesiredMode: enable,
-				Reason:      "surplus dropping, stop dwell started",
-				ReasonCode:  ReasonStopDwellStart,
-			}
+			return newDecision(StateStopPending, Timers{CrossedDownAt: now}, enable, ReasonStopDwellStart)
 		}
 		if now.Sub(timers.CrossedDownAt) >= cfg.StopDwell {
-			return Decision{
-				State:       StateIdle,
-				Timers:      resetTimers(),
-				DesiredMode: ModeOff,
-				Reason:      "surplus low sustained → stop",
-				ReasonCode:  ReasonStopLow,
-			}
+			return newDecision(StateIdle, resetTimers(), ModeOff, ReasonStopLow)
 		}
-		return Decision{
-			State:       StateStopPending,
-			Timers:      Timers{CrossedDownAt: timers.CrossedDownAt},
-			DesiredMode: enable,
-			Reason:      "stop dwell pending",
-			ReasonCode:  ReasonStopDwellPending,
-		}
+		return newDecision(StateStopPending, Timers{CrossedDownAt: timers.CrossedDownAt}, enable, ReasonStopDwellPending)
 	}
-	return Decision{
-		State:       StateCharging,
-		Timers:      resetTimers(),
-		DesiredMode: enable,
-		Reason:      "charging",
-		ReasonCode:  ReasonCharging,
-	}
+	return newDecision(StateCharging, resetTimers(), enable, ReasonCharging)
 }
