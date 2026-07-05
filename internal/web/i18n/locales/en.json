@@ -79,7 +79,7 @@
   "controls.profile_power_latch_help": "Starts once total solar production hits the threshold, then charges to the target SoC without stopping — may draw from the grid once production dips.",
   "controls.profile_surplus_latch_help": "Starts only once genuine export surplus hits the threshold, then charges to the target SoC without stopping.",
   "controls.latch_compare_summary": "How do these differ?",
-  "controls.latch_compare_body": "Both <strong>PV power</strong> and <strong>Surplus (latch)</strong> are \"charge to completion\" modes: once started, they keep charging at full power through a dip in the trigger, stopping only at the target SoC. They differ only in what starts them — <strong>PV power</strong> reacts to total solar production and may pull from the grid, while <strong>Surplus (latch)</strong> reacts only to genuine leftover power after the house (battery discharge doesn't count as surplus). Fail-safes (stale data, disconnect, override, SoC cap) always take priority over either mode.",
+  "controls.latch_compare_body": "Both <strong>PV power (latch)</strong> and <strong>Surplus (latch)</strong> are \"charge to completion\" modes: once started, they keep charging at full power through a dip in the trigger, stopping only at the target SoC. They differ only in what starts them — <strong>PV power (latch)</strong> reacts to total solar production and may pull from the grid, while <strong>Surplus (latch)</strong> reacts only to genuine leftover power after the house (battery discharge doesn't count as surplus). Fail-safes (stale data, disconnect, override, SoC cap) always take priority over either mode.",
   "controls.start_threshold_label": "Start threshold",
   "controls.target_soc_label": "Charge to",
   "controls.set_btn": "Set",
