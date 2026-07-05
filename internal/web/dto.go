@@ -39,6 +39,18 @@ type StatusVM struct {
 	// the same value pre-reduced for the template.
 	ChargePower    string `json:"chargePower"`
 	ChargePowerNow bool   `json:"chargePowerNow"`
+	// AutoProfile is the effective auto-charge profile (surplus|power_latch|
+	// surplus_latch). AutoProfilePowerLatch/AutoProfileSurplusLatch are the same
+	// value pre-reduced for the template's button state; AutoProfileIsLatch is
+	// true for either latch profile, gating the threshold/target-SoC controls.
+	AutoProfile             string `json:"autoProfile"`
+	AutoProfilePowerLatch   bool   `json:"autoProfilePowerLatch"`
+	AutoProfileSurplusLatch bool   `json:"autoProfileSurplusLatch"`
+	AutoProfileIsLatch      bool   `json:"autoProfileIsLatch"`
+	// StartThresholdW is the effective latch start threshold in whole watts.
+	StartThresholdW int `json:"startThresholdW"`
+	// TargetSoC is the effective stop target (10 % steps) for the active profile.
+	TargetSoC int `json:"targetSoC"`
 	// SoCCap/SoCMax are surfaced so the template can label the cap-bypass control.
 	// SoCCapPlusOne is the lowest target the server accepts (it clamps to
 	// SoCCap+1); the input's min uses it so the browser rejects SoCCap itself.
@@ -97,9 +109,17 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 
 		ChargePower:    v.ChargePower,
 		ChargePowerNow: v.ChargePower == config.EnableModeNow,
-		SoCCap:         v.SoCCap,
-		SoCMax:         v.SoCMax,
-		SoCCapPlusOne:  v.SoCCap + 1,
+
+		AutoProfile:             v.AutoProfile,
+		AutoProfilePowerLatch:   v.AutoProfile == config.AutoProfilePowerLatch,
+		AutoProfileSurplusLatch: v.AutoProfile == config.AutoProfileSurplusLatch,
+		AutoProfileIsLatch:      v.AutoProfile != config.AutoProfileSurplus,
+		StartThresholdW:         watts(v.StartThresholdW),
+		TargetSoC:               v.TargetSoC,
+
+		SoCCap:        v.SoCCap,
+		SoCMax:        v.SoCMax,
+		SoCCapPlusOne: v.SoCCap + 1,
 
 		SurplusW:  watts(v.Surplus),
 		SurplusKW: kw(v.Surplus),

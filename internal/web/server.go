@@ -30,6 +30,9 @@ type Controller interface {
 	Status() controller.StatusView
 	SetOverride(mode controller.Override, until time.Time, capBypass bool, capBypassSoC int)
 	SetChargePower(mode string) error
+	SetAutoProfile(profile string) error
+	SetStartThreshold(w float64) error
+	SetTargetSoC(pct int) error
 }
 
 // Store is the subset of *store.Store the web layer needs.
@@ -184,6 +187,9 @@ func (s *Server) registerRoutes() {
 	api.Get("/status", s.handleAPIStatus)
 	api.Post("/override", s.handleAPIOverride)
 	api.Post("/charge-power", s.handleChargePower)
+	api.Post("/auto-profile", s.handleAutoProfile)
+	api.Post("/start-threshold", s.handleStartThreshold)
+	api.Post("/target-soc", s.handleTargetSoC)
 	api.Get("/sessions", s.handleAPISessions)
 	api.Get("/events", s.handleAPIEvents)
 	api.Get("/history", s.handleAPIHistory)

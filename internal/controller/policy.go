@@ -30,10 +30,39 @@ func effectiveMode(in Inputs, cfg config.Control) string {
 	return cfg.EnableMode
 }
 
+// effectiveProfile returns the runtime auto-charge profile, falling back to
+// the configured default when unset.
+func effectiveProfile(in Inputs, cfg config.Control) string {
+	if in.AutoProfile != "" {
+		return in.AutoProfile
+	}
+	return cfg.AutoProfile
+}
+
+// effectiveStartThreshold returns the runtime start-threshold override for the
+// active profile, falling back to cfg.StartThresholdW when unset.
+func effectiveStartThreshold(in Inputs, cfg config.Control) float64 {
+	if in.StartThresholdW != 0 {
+		return in.StartThresholdW
+	}
+	return cfg.StartThresholdW
+}
+
+// effectiveTargetSoC returns the runtime target-SoC override for the active
+// profile, falling back to cfg.SoCCap when unset.
+func effectiveTargetSoC(in Inputs, cfg config.Control) int {
+	if in.TargetSoC != 0 {
+		return in.TargetSoC
+	}
+	return cfg.SoCCap
+}
+
 // LimitSoCTarget is the SoC limit wha asks evcc to enforce as its dead-man
-// backstop. It is the configured cap, lifted to the operator-chosen target (or
-// cfg.SoCMax when unspecified) only while an explicit "charge past the cap"
-// ForceOn override is active. The target is clamped to [SoCCap+1, SoCMax].
+// backstop. Precedence: (1) an explicit "charge past the cap" ForceOn+CapBypass
+// override always wins, lifting the target to the operator-chosen value (or
+// cfg.SoCMax when unspecified), clamped to [SoCCap+1, SoCMax]; (2) an active
+// latch profile (power_latch/surplus_latch) sets the target to its effective
+// target SoC, unclamped; (3) otherwise the configured cap.
 func LimitSoCTarget(now time.Time, in Inputs, cfg config.Control) int {
 	if in.Override == OverrideForceOn && in.OverrideCapBypass && overrideActive(now, in) {
 		if in.OverrideCapBypassSoC > 0 {
@@ -47,6 +76,9 @@ func LimitSoCTarget(now time.Time, in Inputs, cfg config.Control) int {
 			return target
 		}
 		return cfg.SoCMax
+	}
+	if effectiveProfile(in, cfg) != config.AutoProfileSurplus {
+		return effectiveTargetSoC(in, cfg)
 	}
 	return cfg.SoCCap
 }
@@ -114,15 +146,25 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 		return newDecision(StateIdle, resetTimers(), ModeOff, ReasonNoVehicle)
 	}
 
-	// 5. SoC cap (latched).
-	if in.VehicleSoC >= cfg.SoCCap {
+	// 5. SoC cap (latched). target is cfg.SoCCap for the default surplus profile
+	// (effectiveTargetSoC falls back to it), so the resume boundary reduces to
+	// cfg.SoCResumeBelow exactly as before; a latch profile's target shifts both
+	// bounds together, keeping the resume band's width constant.
+	target := effectiveTargetSoC(in, cfg)
+	resumeBelow := target - (cfg.SoCCap - cfg.SoCResumeBelow)
+	if in.VehicleSoC >= target {
 		return newDecision(StateSocReached, resetTimers(), ModeOff, ReasonSoCCap)
 	}
-	if st == StateSocReached && in.VehicleSoC >= cfg.SoCResumeBelow {
+	if st == StateSocReached && in.VehicleSoC >= resumeBelow {
 		return newDecision(StateSocReached, resetTimers(), ModeOff, ReasonSoCLatch)
 	}
 
-	// 6. Surplus hysteresis + dwell (the normal path).
+	// 6. Auto-charge profile: the default surplus hysteresis, or a "charge to
+	// completion" latch profile.
+	if profile := effectiveProfile(in, cfg); profile != config.AutoProfileSurplus {
+		return decideLatch(now, in, st, timers, cfg, profile)
+	}
+
 	s := Surplus(in)
 	enable := effectiveMode(in, cfg)
 
@@ -131,6 +173,36 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 		return decideFromCharging(now, s, timers, cfg, enable)
 	}
 	return decideFromIdle(now, s, timers, cfg, enable)
+}
+
+// decideLatch implements the power_latch/surplus_latch profiles: once the
+// trigger (PVW for power_latch, Surplus for surplus_latch) crosses the
+// effective start threshold and the start dwell elapses, charging begins at
+// full power (config.EnableModeNow) and continues even if the trigger later
+// drops — StopThreshold/StopDwell are never evaluated. A stray StateStopPending
+// (e.g. left over from a mid-flight switch away from the surplus profile) is
+// treated as already-charging so it re-latches instead of stopping.
+func decideLatch(now time.Time, in Inputs, st State, timers Timers, cfg config.Control, profile string) Decision {
+	if st == StateCharging || st == StateStopPending {
+		return newDecision(StateCharging, resetTimers(), config.EnableModeNow, ReasonLatchCharging)
+	}
+
+	trigger := Surplus(in)
+	if profile == config.AutoProfilePowerLatch {
+		trigger = in.PVW
+	}
+	threshold := effectiveStartThreshold(in, cfg)
+
+	if trigger >= threshold {
+		if timers.CrossedUpAt.IsZero() {
+			return newDecision(StateSurplusPending, Timers{CrossedUpAt: now}, ModeOff, ReasonLatchStart)
+		}
+		if now.Sub(timers.CrossedUpAt) >= cfg.StartDwell {
+			return newDecision(StateCharging, resetTimers(), config.EnableModeNow, ReasonLatchCharging)
+		}
+		return newDecision(StateSurplusPending, Timers{CrossedUpAt: timers.CrossedUpAt}, ModeOff, ReasonSurplusDwellPending)
+	}
+	return newDecision(StateIdle, resetTimers(), ModeOff, ReasonLatchBelowStart)
 }
 
 // decideFromIdle handles ticks where we are not currently charging.

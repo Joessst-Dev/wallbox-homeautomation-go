@@ -49,5 +49,8 @@ func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ctrl
 		OverrideCapBypass:    ctrl.CapBypass,
 		OverrideCapBypassSoC: ctrl.CapBypassSoC,
 		ChargePower:          ctrl.ChargePower,
+		AutoProfile:          ctrl.AutoProfile,
+		StartThresholdW:      ctrl.StartThresholdW,
+		TargetSoC:            ctrl.TargetSoC,
 	}
 }
