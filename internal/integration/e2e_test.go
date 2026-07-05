@@ -309,6 +309,31 @@ var _ = Describe("End-to-end (embedded broker + real components)", func() {
 			Should(Equal("now"))
 	})
 
+	It("latches to full-power charging via POST /api/auto-profile and holds through a PV collapse", func() {
+		// Select the power_latch profile and a 90% target through the real HTTP
+		// layer. target-soc is POSTed after auto-profile so its request recycles the
+		// pooled fasthttp buffer — with the handler's strings.Clone in place the
+		// stored profile survives that reuse (this also guards that fix end to end).
+		doForm(srv, "/api/auto-profile", "profile=power_latch")
+		doForm(srv, "/api/target-soc", "targetSoC=90")
+
+		// PV surplus arrives → the latch drives full-power (now) charging over the
+		// real broker, and the limitSoc dead-man backstop tracks the latch target
+		// (90) rather than the default cap (80).
+		publishSurplus()
+		Eventually(func() string { return cmds.last(tp.ModeSet) }, eventuallyTimeout, eventuallyPoll).
+			Should(Equal("now"))
+		Eventually(func() string { return cmds.last(tp.LimitSoCSet) }, eventuallyTimeout, eventuallyPoll).
+			Should(Equal("90"))
+
+		// The trigger collapses (PV gone, now importing) → the latch keeps charging
+		// at full power; StopThreshold/StopDwell are never evaluated for a latch.
+		pub(tp.PVPower, "0")
+		pub(tp.GridPower, "1000")
+		Consistently(func() string { return cmds.last(tp.ModeSet) }, 150*time.Millisecond, eventuallyPoll).
+			Should(Equal("now"))
+	})
+
 	It("reflects the live state via GET /api/status and readiness via GET /readyz", func() {
 		publishSurplus()
 		Eventually(func() string { return cmds.last(tp.ModeSet) }, eventuallyTimeout, eventuallyPoll).

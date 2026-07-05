@@ -298,6 +298,154 @@ var _ = Describe("Controller integration (real store)", func() {
 		})
 	})
 
+	Describe("auto-charge latch profiles (real store)", func() {
+		// pvSnap is a healthy, connected snapshot producing pvW of PV power (the
+		// power_latch trigger) with no grid flow.
+		pvSnap := func(now time.Time, pvW float64) evcc.Snapshot {
+			s := healthySnap(now)
+			s.PV = evcc.FloatMetric{Value: pvW, At: now, Seen: true}
+			return s
+		}
+
+		It("power_latch: latches on PV, holds through a PV collapse, stops at the target SoC", func() {
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(70)).To(Succeed())
+
+			// PV below the start threshold → idle, not latched.
+			snaps.set(pvSnap(t0, 500)) // < cfg.StartThresholdW (1400)
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateIdle))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonLatchBelowStart))
+
+			// PV crosses the threshold → arms the start dwell (like the surplus path).
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(pvSnap(clk.Now(), 4000))
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateSurplusPending))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonLatchStart))
+
+			// Still above with the (zero) dwell elapsed → full-power (now) charging.
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(pvSnap(clk.Now(), 4000))
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateCharging))
+			Expect(ctrl.Status().DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonLatchCharging))
+			Expect(latestMode(cmd)).To(Equal(config.EnableModeNow))
+
+			// PV collapses to zero → the latch holds; still charging at full power.
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(pvSnap(clk.Now(), 0))
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateCharging))
+			Expect(ctrl.Status().DesiredMode).To(Equal(config.EnableModeNow))
+
+			// Vehicle reaches the runtime target SoC → SoC-cap fail-safe forces off.
+			clk.Advance(cfg.DecisionInterval)
+			done := pvSnap(clk.Now(), 0)
+			done.VehicleSoC = evcc.FloatMetric{Value: 70, At: clk.Now(), Seen: true}
+			snaps.set(done)
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateSocReached))
+			Expect(ctrl.Status().DesiredMode).To(Equal(ModeOff))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonSoCCap))
+		})
+
+		It("surplus_latch: latches on net surplus and holds through a surplus collapse", func() {
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplusLatch)).To(Succeed())
+
+			// Net surplus crosses the start threshold → arms, then charges next tick.
+			snaps.set(surplusSnap(t0, -3000)) // surplus 3000 >= 1400
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateSurplusPending))
+
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(surplusSnap(clk.Now(), -3000))
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateCharging))
+			Expect(ctrl.Status().DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonLatchCharging))
+
+			// Surplus collapses (now importing) → the latch holds; still charging.
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(surplusSnap(clk.Now(), 2000)) // importing → negative surplus
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateCharging))
+			Expect(ctrl.Status().DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonLatchCharging))
+		})
+
+		It("respects a runtime start-threshold override for the latch trigger", func() {
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplusLatch)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(5000)).To(Succeed()) // raise above the default 1400
+
+			// 3000 surplus is below the raised 5000 threshold → not latched.
+			snaps.set(surplusSnap(t0, -3000))
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateIdle))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonLatchBelowStart))
+
+			// 6000 surplus clears the raised threshold → arms, then charges next tick.
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(surplusSnap(clk.Now(), -6000))
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateSurplusPending))
+
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(surplusSnap(clk.Now(), -6000))
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateCharging))
+			Expect(ctrl.Status().DesiredMode).To(Equal(config.EnableModeNow))
+		})
+
+		It("restores the persisted profile, start threshold, and target SoC for a fresh controller", func() {
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(2500)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(90)).To(Succeed())
+
+			// All three land in the settings KV table.
+			for key, want := range map[string]string{
+				"auto_profile":      config.AutoProfilePowerLatch,
+				"start_threshold_w": "2500",
+				"target_soc":        "90",
+			} {
+				v, ok, err := st.GetSetting(ctx, key)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(ok).To(BeTrue(), "setting %q should be persisted", key)
+				Expect(v).To(Equal(want))
+			}
+
+			// A fresh controller over the same DB restores them on load.
+			fresh := New(cfg, &fakeCommander{}, snaps, st, clk, discardLogger())
+			Expect(fresh.Status().AutoProfile).To(Equal(cfg.AutoProfile)) // config default before load
+			fresh.loadAutoProfile(ctx)
+			fresh.loadStartThreshold(ctx)
+			fresh.loadTargetSoC(ctx)
+			Expect(fresh.Status().AutoProfile).To(Equal(config.AutoProfilePowerLatch))
+			Expect(fresh.Status().StartThresholdW).To(Equal(2500.0))
+			Expect(fresh.Status().TargetSoC).To(Equal(90))
+		})
+
+		It("ignores a TargetSoC left over from a latch session after switching back to surplus", func() {
+			// Regression: TargetSoC is a global persisted setting that SetAutoProfile
+			// does not reset, so a leftover latch target must not raise the SoC cap
+			// once the default surplus profile is active again.
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(100)).To(Succeed()) // "charge fully before a trip"
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplus)).To(Succeed())
+
+			// Back on surplus with SoC above cfg.SoCCap (80): the cap must fire at 80,
+			// not the stale 100 target — otherwise plain PV control overcharges.
+			over := surplusSnap(t0, -5000) // ample surplus; only the cap should hold it off
+			over.VehicleSoC = evcc.FloatMetric{Value: 85, At: t0, Seen: true}
+			snaps.set(over)
+			ctrl.tick(ctx, clk.Now())
+			Expect(ctrl.Status().State).To(Equal(StateSocReached))
+			Expect(ctrl.Status().DesiredMode).To(Equal(ModeOff))
+			Expect(ctrl.Status().ReasonCode).To(Equal(ReasonSoCCap))
+		})
+	})
+
 	Describe("session lifecycle against the real DB", func() {
 		It("opens an open charge_sessions row on the charging edge with start reason surplus", func() {
 			snaps.set(healthySnap(t0))
@@ -424,6 +572,23 @@ var _ = Describe("Controller integration (real store)", func() {
 			Expect(cmd.lastLimit()).To(Equal(cfg.SoCMax))
 
 			ctrl.SetOverride(OverrideAuto, time.Time{}, false, 0)
+			clk.Advance(cfg.DecisionInterval)
+			snaps.set(healthySnap(clk.Now()))
+			ctrl.tick(ctx, clk.Now())
+			Expect(cmd.lastLimit()).To(Equal(cfg.SoCCap))
+		})
+
+		It("tracks the latch target under an active latch profile and restores SoCCap on return to surplus", func() {
+			// A latch profile lifts the backstop to its target SoC...
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(90)).To(Succeed())
+			snaps.set(healthySnap(t0))
+			ctrl.tick(ctx, clk.Now())
+			Expect(cmd.lastLimit()).To(Equal(90))
+
+			// ...and switching back to surplus restores the configured cap, even with
+			// the 90 target still persisted (mirrors the Decide-side gating).
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplus)).To(Succeed())
 			clk.Advance(cfg.DecisionInterval)
 			snaps.set(healthySnap(clk.Now()))
 			ctrl.tick(ctx, clk.Now())
