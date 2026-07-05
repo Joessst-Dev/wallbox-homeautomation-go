@@ -463,6 +463,29 @@ var _ = Describe("Web Server", func() {
 			resp := doRequest(srv, req)
 			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 		})
+
+		It("does not let a later request's body buffer corrupt an earlier stored mode", func() {
+			// Fiber's BodyParser (non-Immutable) returns strings that alias the
+			// pooled fasthttp request buffer. Firing several requests back to
+			// back through the same app reuses that buffer, so a value stored
+			// without copying it out (e.g. into long-lived controller state)
+			// can be silently overwritten by a later request's bytes.
+			first := httptest.NewRequest(http.MethodPost, "/api/charge-power",
+				strings.NewReader("power=pv"))
+			first.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			doRequest(srv, first)
+			Expect(ctrl.chargePowerMode).To(Equal("pv"))
+			stored := ctrl.chargePowerMode
+
+			for i := 0; i < 5; i++ {
+				req := httptest.NewRequest(http.MethodPost, "/api/charge-power",
+					strings.NewReader("power=now"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				doRequest(srv, req)
+			}
+
+			Expect(stored).To(Equal("pv"), "earlier stored mode must not be corrupted by a later request's recycled buffer")
+		})
 	})
 
 	Describe("GET /partials/update", func() {

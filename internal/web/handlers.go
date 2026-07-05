@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -194,7 +195,11 @@ func (s *Server) handleChargePower(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid charge-power body")
 	}
-	if err := s.ctrl.SetChargePower(req.Power); err != nil {
+	// Fiber's BodyParser (non-Immutable) returns strings that alias the pooled
+	// fasthttp request buffer; SetChargePower retains this string in long-lived
+	// state, so it must be copied out before the buffer is recycled for a later
+	// request.
+	if err := s.ctrl.SetChargePower(strings.Clone(req.Power)); err != nil {
 		if errors.Is(err, controller.ErrInvalidChargePower) {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
