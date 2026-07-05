@@ -4,11 +4,21 @@
 
 A small Go service that runs PV-surplus EV charging on top of [evcc](https://evcc.io).
 It reads live state from evcc over MQTT, applies its own decision policy, and toggles
-the loadpoint — with a web dashboard and history.
+the loadpoint — with a web dashboard, history, and a JSON API.
 
 **Two rules:**
 - **Surplus detected → start charging** (sustained PV surplus over a threshold).
 - **Vehicle SoC > 80% → stop charging** (hard cap, latched).
+
+Beyond the default surplus hysteresis, two configurable **auto-charge profiles**
+("charge to completion") are available from the dashboard: latch onto PV
+production or net surplus once a threshold is crossed, then keep charging past
+any dips until a target SoC is reached. See
+[Dashboard → Auto-charge profile](https://joessst-dev.github.io/wallbox-homeautomation-go/guide/dashboard#auto-charge-profile).
+
+The dashboard and `/setup` page are localized (**English + German**), and the
+dashboard installs as a Progressive Web App behind HTTPS (bundled Caddy with an
+internal CA) for a native-feeling home-screen experience.
 
 ## Hardware
 
@@ -96,8 +106,9 @@ internal/web        Fiber + htmx + Tailwind dashboard and JSON API
 internal/app        composition root (errgroup, graceful shutdown)
 ```
 
-See the [MQTT topic contract](https://joessst-dev.github.io/wallbox-homeautomation-go/reference/mqtt) in the user manual and
-[CONTRIBUTING.md](CONTRIBUTING.md) for build/test conventions.
+See the [MQTT topic contract](https://joessst-dev.github.io/wallbox-homeautomation-go/reference/mqtt)
+and [HTTP API reference](https://joessst-dev.github.io/wallbox-homeautomation-go/reference/api) in the
+user manual, and [CONTRIBUTING.md](CONTRIBUTING.md) for build/test conventions.
 
 ## Run
 
@@ -226,6 +237,7 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
 | `mqtt.topicPrefix`          | `evcc`               | evcc's MQTT topic prefix |
 | `evcc.loadpointID`          | `1`                  | Which evcc loadpoint to control (1-based) |
 | `control.enableMode`        | `pv`                 | Initial charge mode (`pv` or `now`); switchable at runtime from the dashboard and persisted |
+| `control.autoProfile`       | `surplus`            | Initial auto-charge profile (`surplus`, `power_latch`, `surplus_latch`); switchable at runtime from the dashboard and persisted |
 | `control.startThresholdW`   | `1400`               | Surplus (W) required to start charging |
 | `control.stopThresholdW`    | `0`                  | Surplus (W) below which charging stops |
 | `control.startDwell`        | `2m`                 | Surplus must hold this long before starting (anti-flap) |

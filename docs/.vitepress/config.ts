@@ -61,6 +61,7 @@ export default defineConfig({
               text: 'Reference',
               items: [
                 { text: 'Configuration', link: '/reference/configuration' },
+                { text: 'API', link: '/reference/api' },
                 { text: 'MQTT', link: '/reference/mqtt' },
                 { text: 'Troubleshooting', link: '/reference/troubleshooting' },
                 { text: 'FAQ', link: '/reference/faq' }
@@ -110,6 +111,7 @@ export default defineConfig({
               text: 'Referenz',
               items: [
                 { text: 'Konfiguration', link: '/de/reference/configuration' },
+                { text: 'API', link: '/de/reference/api' },
                 { text: 'MQTT', link: '/de/reference/mqtt' },
                 { text: 'Fehlerbehebung', link: '/de/reference/troubleshooting' },
                 { text: 'FAQ', link: '/de/reference/faq' }
