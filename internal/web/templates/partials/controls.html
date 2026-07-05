@@ -73,6 +73,14 @@
       {{if .AutoProfilePowerLatch}}{{ t .Lang "controls.profile_power_latch_help" }}{{else if .AutoProfileSurplusLatch}}{{ t .Lang "controls.profile_surplus_latch_help" }}{{else}}{{ t .Lang "controls.profile_surplus_help" }}{{end}}
     </p>
 
+    {{- /* Both latch profiles are "charge to completion" modes that differ only
+           in their trigger; this stays collapsed so the inline help above can
+           stay brief while the detail is one tap away. */ -}}
+    <details class="mt-1.5 text-xs text-slate-400 dark:text-slate-500">
+      <summary class="cursor-pointer select-none font-medium text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">{{ t .Lang "controls.latch_compare_summary" }}</summary>
+      <p class="mt-1.5 leading-relaxed">{{ t .Lang "controls.latch_compare_body" | safeHTML }}</p>
+    </details>
+
     {{if .AutoProfileIsLatch}}
     <div class="mt-2 space-y-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs dark:bg-slate-800/60">
       <form hx-post="/api/start-threshold" hx-target="#controls" hx-swap="innerHTML"
