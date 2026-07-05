@@ -320,6 +320,37 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusBelowStart))
 		})
+
+		It("ignores a leftover TargetSoC under the default surplus profile and caps at cfg.SoCCap", func() {
+			// Regression: TargetSoC is a global persisted setting not reset when
+			// switching profiles. A 90% target left over from a previous latch
+			// session must not raise the safety cap once back on surplus.
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfileSurplus // explicit surplus (as after a profile switch)
+			in.TargetSoC = 90                          // stale leftover from a latch session
+			in.VehicleSoC = 85                         // above cfg.SoCCap (80), below the stale target
+			in.ChargeW = 10000
+			in.GridW = -10000 // plenty of surplus
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateSocReached))
+			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCCap))
+		})
+
+		It("ignores a leftover TargetSoC when AutoProfile is unset (falls back to surplus)", func() {
+			in := baseInputs() // AutoProfile "" → falls back to cfg.AutoProfile (surplus)
+			in.TargetSoC = 100
+			in.VehicleSoC = 85
+			in.ChargeW = 10000
+			in.GridW = -10000
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateSocReached))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCCap))
+		})
 	})
 
 	Context("start dwell from idle", func() {

@@ -226,7 +226,11 @@ func (s *Server) handleAutoProfile(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, "invalid auto-profile body")
 	}
-	if err := s.ctrl.SetAutoProfile(req.Profile); err != nil {
+	// Clone before retaining: Fiber's BodyParser (non-Immutable) returns strings
+	// aliasing the pooled fasthttp request buffer, and SetAutoProfile stores this
+	// into long-lived state (same hazard as handleChargePower). StartThresholdW/
+	// TargetSoC are value types, so only the profile string needs copying.
+	if err := s.ctrl.SetAutoProfile(strings.Clone(req.Profile)); err != nil {
 		if errors.Is(err, controller.ErrInvalidAutoProfile) {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}

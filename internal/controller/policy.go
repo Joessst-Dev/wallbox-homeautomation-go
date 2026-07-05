@@ -146,11 +146,16 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 		return newDecision(StateIdle, resetTimers(), ModeOff, ReasonNoVehicle)
 	}
 
-	// 5. SoC cap (latched). target is cfg.SoCCap for the default surplus profile
-	// (effectiveTargetSoC falls back to it), so the resume boundary reduces to
-	// cfg.SoCResumeBelow exactly as before; a latch profile's target shifts both
-	// bounds together, keeping the resume band's width constant.
-	target := effectiveTargetSoC(in, cfg)
+	// 5. SoC cap (latched). Only a latch profile's runtime TargetSoC shifts the
+	// cap; under the default surplus profile the target is always cfg.SoCCap so a
+	// TargetSoC left over from a previous latch session can never raise the safety
+	// cap (mirrors LimitSoCTarget's profile gating). A latch profile's target
+	// shifts both bounds together, keeping the resume band's width constant.
+	profile := effectiveProfile(in, cfg)
+	target := cfg.SoCCap
+	if profile != config.AutoProfileSurplus {
+		target = effectiveTargetSoC(in, cfg)
+	}
 	resumeBelow := target - (cfg.SoCCap - cfg.SoCResumeBelow)
 	if in.VehicleSoC >= target {
 		return newDecision(StateSocReached, resetTimers(), ModeOff, ReasonSoCCap)
@@ -161,7 +166,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 
 	// 6. Auto-charge profile: the default surplus hysteresis, or a "charge to
 	// completion" latch profile.
-	if profile := effectiveProfile(in, cfg); profile != config.AutoProfileSurplus {
+	if profile != config.AutoProfileSurplus {
 		return decideLatch(now, in, st, timers, cfg, profile)
 	}
 
