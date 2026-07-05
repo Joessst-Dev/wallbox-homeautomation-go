@@ -41,12 +41,24 @@ type Recorder interface {
 }
 
 // Settings keys under which the persistent operator choices are stored.
+// startThresholdKeyPrefix/targetSoCKeyPrefix are joined with a profile name
+// (via settingKey) since those two are per-latch-profile, not global.
 const (
-	chargePowerSetting    = "charge_power"
-	autoProfileSetting    = "auto_profile"
-	startThresholdSetting = "start_threshold_w"
-	targetSoCSetting      = "target_soc"
+	chargePowerSetting      = "charge_power"
+	autoProfileSetting      = "auto_profile"
+	startThresholdKeyPrefix = "start_threshold_w:"
+	targetSoCKeyPrefix      = "target_soc:"
 )
+
+// settingKey joins a per-profile settings key prefix with the profile name.
+func settingKey(prefix, profile string) string {
+	return prefix + profile
+}
+
+// latchProfiles lists the auto-charge profiles that get their own persisted
+// start-threshold/target-SoC overrides (config.AutoProfileSurplus uses the
+// static cfg.StartThresholdW/cfg.SoCCap instead).
+var latchProfiles = []string{config.AutoProfilePowerLatch, config.AutoProfileSurplusLatch}
 
 // Controller runs the periodic decision loop: read evcc state, decide, publish
 // the desired mode on change, and persist sessions/events/samples.
@@ -539,7 +551,11 @@ var ErrInvalidStartThreshold = errors.New("invalid start threshold")
 // 100 W steps) used by the active auto-charge profile's start trigger. It must
 // be positive, a multiple of 100, and greater than cfg.StopThresholdW — the
 // same invariant config.Validate enforces for the static default, re-checked
-// here because a runtime value bypasses it.
+// here because a runtime value bypasses it. It only applies to a latch
+// profile (config.AutoProfilePowerLatch, AutoProfileSurplusLatch); the default
+// surplus profile uses the static cfg.StartThresholdW hysteresis instead. The
+// value is stored under the active profile's own key, so switching profiles
+// never leaks one profile's threshold into another.
 func (c *Controller) SetStartThreshold(w float64) error {
 	if w <= 0 || math.Mod(w, 100) != 0 {
 		return fmt.Errorf("%w %.0f (want a positive multiple of 100)", ErrInvalidStartThreshold, w)
@@ -547,43 +563,60 @@ func (c *Controller) SetStartThreshold(w float64) error {
 	if w <= c.cfg.StopThresholdW {
 		return fmt.Errorf("%w %.0f (must be greater than stopThresholdW %.0f)", ErrInvalidStartThreshold, w, c.cfg.StopThresholdW)
 	}
-	if err := c.rec.SetSetting(context.Background(), startThresholdSetting, strconv.FormatFloat(w, 'f', -1, 64)); err != nil {
+	c.mu.Lock()
+	profile := c.ctrl.AutoProfile
+	c.mu.Unlock()
+	if profile == "" {
+		profile = c.cfg.AutoProfile
+	}
+	if profile != config.AutoProfilePowerLatch && profile != config.AutoProfileSurplusLatch {
+		return fmt.Errorf("%w: only applies to a latch profile (active profile is %q)", ErrInvalidStartThreshold, profile)
+	}
+	if err := c.rec.SetSetting(context.Background(), settingKey(startThresholdKeyPrefix, profile), strconv.FormatFloat(w, 'f', -1, 64)); err != nil {
 		return fmt.Errorf("persist start threshold: %w", err)
 	}
 	c.mu.Lock()
-	c.ctrl.StartThresholdW = w
+	if c.ctrl.StartThresholdW == nil {
+		c.ctrl.StartThresholdW = make(map[string]float64)
+	}
+	c.ctrl.StartThresholdW[profile] = w
 	c.mu.Unlock()
 
 	if err := c.rec.InsertEvent(context.Background(), store.Event{
-		TS: c.clock.Now(), Type: "command", Action: "start_threshold:" + strconv.FormatFloat(w, 'f', -1, 64),
+		TS: c.clock.Now(), Type: "command", Action: "start_threshold:" + profile + ":" + strconv.FormatFloat(w, 'f', -1, 64),
 	}); err != nil {
 		c.log.Warn("controller: InsertEvent (start_threshold) failed", "err", err)
 	}
-	c.log.Info("controller: start threshold set", "startThresholdW", w)
+	c.log.Info("controller: start threshold set", "profile", profile, "startThresholdW", w)
 	return nil
 }
 
-// loadStartThreshold restores the persisted start-threshold override at
-// startup, keeping the config default (via effectiveStartThreshold) when none
-// is stored or the stored value is invalid.
+// loadStartThreshold restores each latch profile's persisted start-threshold
+// override at startup, keeping the config default (via
+// effectiveStartThreshold) for a profile whose value is missing or invalid.
 func (c *Controller) loadStartThreshold(ctx context.Context) {
-	raw, ok, err := c.rec.GetSetting(ctx, startThresholdSetting)
-	if err != nil {
-		c.log.Warn("controller: load start threshold failed (using default)", "err", err)
-		return
+	for _, profile := range latchProfiles {
+		raw, ok, err := c.rec.GetSetting(ctx, settingKey(startThresholdKeyPrefix, profile))
+		if err != nil {
+			c.log.Warn("controller: load start threshold failed (using default)", "profile", profile, "err", err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		w, err := strconv.ParseFloat(raw, 64)
+		if err != nil || w <= 0 || math.Mod(w, 100) != 0 || w <= c.cfg.StopThresholdW {
+			c.log.Warn("controller: stored start threshold invalid (using default)", "profile", profile, "value", raw)
+			continue
+		}
+		c.mu.Lock()
+		if c.ctrl.StartThresholdW == nil {
+			c.ctrl.StartThresholdW = make(map[string]float64)
+		}
+		c.ctrl.StartThresholdW[profile] = w
+		c.mu.Unlock()
+		c.log.Info("controller: start threshold restored", "profile", profile, "startThresholdW", w)
 	}
-	if !ok {
-		return
-	}
-	w, err := strconv.ParseFloat(raw, 64)
-	if err != nil || w <= 0 || math.Mod(w, 100) != 0 || w <= c.cfg.StopThresholdW {
-		c.log.Warn("controller: stored start threshold invalid (using default)", "value", raw)
-		return
-	}
-	c.mu.Lock()
-	c.ctrl.StartThresholdW = w
-	c.mu.Unlock()
-	c.log.Info("controller: start threshold restored", "startThresholdW", w)
 }
 
 // ErrInvalidTargetSoC is returned by SetTargetSoC when the requested value
@@ -591,49 +624,69 @@ func (c *Controller) loadStartThreshold(ctx context.Context) {
 var ErrInvalidTargetSoC = errors.New("invalid target SoC")
 
 // SetTargetSoC sets the persistent target-SoC override (10 % steps, 50–100)
-// used as the stop target by the active auto-charge profile (and, for the
-// default surplus profile, as the SoC cap itself).
+// used as the stop target by the active auto-charge profile. It only applies
+// to a latch profile (config.AutoProfilePowerLatch, AutoProfileSurplusLatch);
+// the default surplus profile always uses cfg.SoCCap as its cap. The value is
+// stored under the active profile's own key, so switching profiles never
+// leaks one profile's target into another.
 func (c *Controller) SetTargetSoC(pct int) error {
 	if pct < 50 || pct > 100 || pct%10 != 0 {
 		return fmt.Errorf("%w %d (want a multiple of 10 within 50..100)", ErrInvalidTargetSoC, pct)
 	}
-	if err := c.rec.SetSetting(context.Background(), targetSoCSetting, strconv.Itoa(pct)); err != nil {
+	c.mu.Lock()
+	profile := c.ctrl.AutoProfile
+	c.mu.Unlock()
+	if profile == "" {
+		profile = c.cfg.AutoProfile
+	}
+	if profile != config.AutoProfilePowerLatch && profile != config.AutoProfileSurplusLatch {
+		return fmt.Errorf("%w: only applies to a latch profile (active profile is %q)", ErrInvalidTargetSoC, profile)
+	}
+	if err := c.rec.SetSetting(context.Background(), settingKey(targetSoCKeyPrefix, profile), strconv.Itoa(pct)); err != nil {
 		return fmt.Errorf("persist target SoC: %w", err)
 	}
 	c.mu.Lock()
-	c.ctrl.TargetSoC = pct
+	if c.ctrl.TargetSoC == nil {
+		c.ctrl.TargetSoC = make(map[string]int)
+	}
+	c.ctrl.TargetSoC[profile] = pct
 	c.mu.Unlock()
 
 	if err := c.rec.InsertEvent(context.Background(), store.Event{
-		TS: c.clock.Now(), Type: "command", Action: "target_soc:" + strconv.Itoa(pct),
+		TS: c.clock.Now(), Type: "command", Action: "target_soc:" + profile + ":" + strconv.Itoa(pct),
 	}); err != nil {
 		c.log.Warn("controller: InsertEvent (target_soc) failed", "err", err)
 	}
-	c.log.Info("controller: target SoC set", "targetSoC", pct)
+	c.log.Info("controller: target SoC set", "profile", profile, "targetSoC", pct)
 	return nil
 }
 
-// loadTargetSoC restores the persisted target-SoC override at startup, keeping
-// the config default (via effectiveTargetSoC) when none is stored or the
-// stored value is invalid.
+// loadTargetSoC restores each latch profile's persisted target-SoC override
+// at startup, keeping the config default (via effectiveTargetSoC) for a
+// profile whose value is missing or invalid.
 func (c *Controller) loadTargetSoC(ctx context.Context) {
-	raw, ok, err := c.rec.GetSetting(ctx, targetSoCSetting)
-	if err != nil {
-		c.log.Warn("controller: load target SoC failed (using default)", "err", err)
-		return
+	for _, profile := range latchProfiles {
+		raw, ok, err := c.rec.GetSetting(ctx, settingKey(targetSoCKeyPrefix, profile))
+		if err != nil {
+			c.log.Warn("controller: load target SoC failed (using default)", "profile", profile, "err", err)
+			continue
+		}
+		if !ok {
+			continue
+		}
+		pct, err := strconv.Atoi(raw)
+		if err != nil || pct < 50 || pct > 100 || pct%10 != 0 {
+			c.log.Warn("controller: stored target SoC invalid (using default)", "profile", profile, "value", raw)
+			continue
+		}
+		c.mu.Lock()
+		if c.ctrl.TargetSoC == nil {
+			c.ctrl.TargetSoC = make(map[string]int)
+		}
+		c.ctrl.TargetSoC[profile] = pct
+		c.mu.Unlock()
+		c.log.Info("controller: target SoC restored", "profile", profile, "targetSoC", pct)
 	}
-	if !ok {
-		return
-	}
-	pct, err := strconv.Atoi(raw)
-	if err != nil || pct < 50 || pct > 100 || pct%10 != 0 {
-		c.log.Warn("controller: stored target SoC invalid (using default)", "value", raw)
-		return
-	}
-	c.mu.Lock()
-	c.ctrl.TargetSoC = pct
-	c.mu.Unlock()
-	c.log.Info("controller: target SoC restored", "targetSoC", pct)
 }
 
 // StatusView is a read-only snapshot of the controller for the web layer.
@@ -664,7 +717,8 @@ func (c *Controller) Status() StatusView {
 	defer c.mu.Unlock()
 	// effIn carries only the runtime overrides so the effective-value helpers
 	// (shared with Decide) resolve the same fallback-to-config precedence here.
-	effIn := Inputs{AutoProfile: c.ctrl.AutoProfile, StartThresholdW: c.ctrl.StartThresholdW, TargetSoC: c.ctrl.TargetSoC}
+	thresholdW, targetSoC := c.ctrl.latchOverrides(c.cfg)
+	effIn := Inputs{AutoProfile: c.ctrl.AutoProfile, StartThresholdW: thresholdW, TargetSoC: targetSoC}
 	return StatusView{
 		State:           c.state,
 		DesiredMode:     c.lastDecision.DesiredMode,

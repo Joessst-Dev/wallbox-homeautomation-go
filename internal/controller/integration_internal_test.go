@@ -403,11 +403,12 @@ var _ = Describe("Controller integration (real store)", func() {
 			Expect(ctrl.SetStartThreshold(2500)).To(Succeed())
 			Expect(ctrl.SetTargetSoC(90)).To(Succeed())
 
-			// All three land in the settings KV table.
+			// All three land in the settings KV table, the latter two namespaced
+			// under the active (power_latch) profile.
 			for key, want := range map[string]string{
-				"auto_profile":      config.AutoProfilePowerLatch,
-				"start_threshold_w": "2500",
-				"target_soc":        "90",
+				"auto_profile":                  config.AutoProfilePowerLatch,
+				"start_threshold_w:power_latch": "2500",
+				"target_soc:power_latch":        "90",
 			} {
 				v, ok, err := st.GetSetting(ctx, key)
 				Expect(err).NotTo(HaveOccurred())
@@ -426,10 +427,47 @@ var _ = Describe("Controller integration (real store)", func() {
 			Expect(fresh.Status().TargetSoC).To(Equal(90))
 		})
 
+		It("keeps each latch profile's start threshold and target SoC independent across switches", func() {
+			// The leftover-target bug (fixed in #48, made structurally impossible
+			// here) came from a single global setting shared across profiles. Prove
+			// each latch profile now remembers its own value.
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(2500)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(90)).To(Succeed())
+
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplusLatch)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(4000)).To(Succeed())
+			Expect(ctrl.SetTargetSoC(70)).To(Succeed())
+			Expect(ctrl.Status().StartThresholdW).To(Equal(4000.0))
+			Expect(ctrl.Status().TargetSoC).To(Equal(70))
+
+			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
+			Expect(ctrl.Status().StartThresholdW).To(Equal(2500.0))
+			Expect(ctrl.Status().TargetSoC).To(Equal(90))
+
+			// A fresh controller restores both profiles' values independently.
+			fresh := New(cfg, &fakeCommander{}, snaps, st, clk, discardLogger())
+			fresh.loadAutoProfile(ctx)
+			fresh.loadStartThreshold(ctx)
+			fresh.loadTargetSoC(ctx)
+			Expect(fresh.Status().StartThresholdW).To(Equal(2500.0))
+			Expect(fresh.Status().TargetSoC).To(Equal(90))
+			Expect(fresh.ctrl.StartThresholdW[config.AutoProfileSurplusLatch]).To(Equal(4000.0))
+			Expect(fresh.ctrl.TargetSoC[config.AutoProfileSurplusLatch]).To(Equal(70))
+		})
+
+		It("rejects SetStartThreshold/SetTargetSoC while the active profile is surplus", func() {
+			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplus)).To(Succeed())
+			Expect(ctrl.SetStartThreshold(2500)).To(MatchError(ErrInvalidStartThreshold))
+			Expect(ctrl.SetTargetSoC(90)).To(MatchError(ErrInvalidTargetSoC))
+		})
+
 		It("ignores a TargetSoC left over from a latch session after switching back to surplus", func() {
-			// Regression: TargetSoC is a global persisted setting that SetAutoProfile
-			// does not reset, so a leftover latch target must not raise the SoC cap
-			// once the default surplus profile is active again.
+			// Regression: pre-#51, TargetSoC was a single global persisted setting
+			// that SetAutoProfile did not reset, so a leftover latch target could
+			// leak into the surplus profile. #51 made this structurally impossible
+			// (per-profile storage); this case now also verifies SetTargetSoC can no
+			// longer even write a value while surplus is active.
 			Expect(ctrl.SetAutoProfile(config.AutoProfilePowerLatch)).To(Succeed())
 			Expect(ctrl.SetTargetSoC(100)).To(Succeed()) // "charge fully before a trip"
 			Expect(ctrl.SetAutoProfile(config.AutoProfileSurplus)).To(Succeed())
