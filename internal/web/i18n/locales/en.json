@@ -119,5 +119,32 @@
   "update.checked_prefix": "Checked",
   "update.check_btn": "Check",
   "update.update_btn": "Update to v%s",
-  "update.confirm_message": "Update wha to v%s now? The service will restart."
+  "update.confirm_message": "Update wha to v%s now? The service will restart.",
+
+  "nav.setup_link": "Secure access & install as app",
+
+  "setup.title": "Secure access — wha",
+  "setup.secure_heading": "Secure access",
+  "setup.secure_intro": "Installing wha as an app and enabling offline support both require a secure (HTTPS) connection. If this deployment runs behind a reverse proxy with an internal certificate authority (e.g. Caddy's <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">tls internal</code>), trust its root certificate below on each device you use.",
+  "setup.secure_warning": "A website cannot silently install a root certificate into your device's trust store — every platform requires a few manual taps to install and confirm trust. The steps below are the shortest path per device.",
+  "setup.download_cert_btn": "Download root certificate",
+  "setup.download_profile_btn": "iOS/macOS configuration profile",
+  "setup.no_ca_body": "No CA root certificate is configured for this deployment (<code class=\"rounded bg-slate-200 px-1 py-0.5 text-xs dark:bg-slate-700\">web.caRootPath</code> is unset) — this is expected for local development or a setup without a reverse proxy. If you're already on <code class=\"rounded bg-slate-200 px-1 py-0.5 text-xs dark:bg-slate-700\">https://</code> or <code class=\"rounded bg-slate-200 px-1 py-0.5 text-xs dark:bg-slate-700\">localhost</code>, you can skip straight to \"%s\" below.",
+
+  "setup.steps_heading": "Per-device install steps",
+  "setup.ios_step1": "Download the <strong>iOS/macOS configuration profile</strong> above in Safari.",
+  "setup.ios_step2": "Open <strong>Settings → General → VPN &amp; Device Management</strong> and tap the downloaded profile.",
+  "setup.ios_step3": "Tap <strong>Install</strong>, then <strong>Settings → General → About → Certificate Trust Settings</strong> and enable full trust for the \"wha secure access root CA\" certificate.",
+  "setup.ios_step4": "Reload the wha dashboard in Safari, then use the Share sheet → <strong>Add to Home Screen</strong>.",
+  "setup.android_step1": "Download the <strong>root certificate</strong> above in Chrome.",
+  "setup.android_step2": "Open <strong>Settings → Security → Encryption &amp; credentials → Install a certificate → CA certificate</strong> and select the downloaded file.",
+  "setup.android_step3": "Reload the wha dashboard in Chrome; when the install banner or menu shows <strong>Install app</strong>, tap it.",
+  "setup.macos_step1": "Download the <strong>root certificate</strong> above, or run the helper script: <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">scripts/trust-ca.sh</code>.",
+  "setup.macos_step2": "If installing manually, open it in <strong>Keychain Access</strong>, add it to the <strong>System</strong> keychain, then double-click it and set <strong>Trust → Always Trust</strong>.",
+  "setup.windows_step1": "Download the <strong>root certificate</strong> above, or run the helper script as Administrator: <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">scripts/trust-ca.ps1</code>.",
+  "setup.windows_step2": "If installing manually, double-click the file, choose <strong>Local Machine → Trusted Root Certification Authorities</strong>, then finish the wizard.",
+  "setup.linux_step1": "Run the helper script: <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">scripts/trust-ca.sh</code> (copies the cert to <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">/usr/local/share/ca-certificates</code> and runs <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">update-ca-certificates</code>).",
+
+  "setup.install_heading": "Install as an app",
+  "setup.install_body": "Once the connection is trusted (or you're on <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">localhost</code>), reload this dashboard and use your browser's install prompt — or the Share sheet's \"Add to Home Screen\" on iOS — to add wha to your home screen. It launches full-screen and keeps a basic offline shell if the connection drops."
 }

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -118,6 +119,10 @@ func newEngine(bundle *i18n.Bundle) *html.Engine {
 		}
 		return *p
 	})
+	// safeHTML marks a translated catalog string as pre-escaped HTML so a
+	// translation may embed static markup (e.g. <code>/<strong>). Catalogs are
+	// embedded, build-time content, never user input, so this is safe.
+	engine.AddFunc("safeHTML", func(s string) template.HTML { return template.HTML(s) })
 	return engine
 }
 

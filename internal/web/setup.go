@@ -13,8 +13,8 @@ import (
 type setupVM struct {
 	Title string
 	// Lang is the resolved request language, consumed by the shared layout
-	// (html lang attribute, header language toggle, footer). The setup body
-	// itself is a specialized secure-access guide kept in English.
+	// (html lang attribute, header language toggle, footer) and by the
+	// template's own {{t}}/{{safeHTML}} lookups.
 	Lang string
 	// HasCARoot is true when a CA root certificate is configured and present on
 	// disk, so the page can link to the download routes instead of explaining
@@ -24,9 +24,10 @@ type setupVM struct {
 
 // handleSetup renders the secure-access / PWA-install guide.
 func (s *Server) handleSetup(c *fiber.Ctx) error {
+	lang := langFromCtx(c)
 	vm := setupVM{
-		Title:     "Secure access — wha",
-		Lang:      langFromCtx(c),
+		Title:     s.i18n.T(lang, "setup.title"),
+		Lang:      lang,
 		HasCARoot: s.caRootAvailable(),
 	}
 	return c.Render("setup", vm, "layout")
