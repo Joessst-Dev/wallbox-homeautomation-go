@@ -393,6 +393,7 @@ var _ = Describe("Controller integration (real store)", func() {
 			runCtx, cancel := context.WithCancel(ctx)
 			done := make(chan struct{})
 			go func() {
+				defer GinkgoRecover()
 				defer close(done)
 				_ = fresh.Run(runCtx)
 			}()

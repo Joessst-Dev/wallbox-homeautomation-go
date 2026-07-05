@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -45,22 +46,60 @@ const (
 // adjacent packets (e.g. "off"+"now" delivered as "onw"). Our production evcc
 // client always publishes the exact command string; that garbage is a
 // test-broker artifact, so — exactly as a real evcc consumer would — the
-// observer drops payloads that fail the topic's validator and only records
-// well-formed commands. Republish guarantees the intended value is re-emitted
-// cleanly, so the meaningful command stream is observed intact.
+// observer filters payloads that fail the topic's validator and only treats
+// well-formed commands as the command stream. Republish guarantees the intended
+// value is re-emitted cleanly, so the meaningful command stream is observed intact.
+//
+// Filtered payloads are not silently discarded: they are counted under dropped so
+// a genuine future corruption bug — one that garbles a large share of packets, or
+// scrambles them in a new way — surfaces via the AfterEach drop-rate bound instead
+// of blending into "the usual glitch".
 type capturedCommands struct {
 	mu      sync.Mutex
 	byTopic map[string][]string
+	dropped map[string][]string // malformed payloads the observer filtered out, per topic
 }
 
 func newCapturedCommands() *capturedCommands {
-	return &capturedCommands{byTopic: map[string][]string{}}
+	return &capturedCommands{byTopic: map[string][]string{}, dropped: map[string][]string{}}
 }
 
-func (c *capturedCommands) add(topic, payload string) {
+// observe records payload under topic when the topic's validator accepts it as a
+// well-formed command, otherwise files it under dropped (see the type doc).
+func (c *capturedCommands) observe(topic, payload string, valid func(string) bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.byTopic[topic] = append(c.byTopic[topic], payload)
+	if valid(payload) {
+		c.byTopic[topic] = append(c.byTopic[topic], payload)
+		return
+	}
+	c.dropped[topic] = append(c.dropped[topic], payload)
+}
+
+// counts returns the number of well-formed and dropped payloads observed across
+// all topics.
+func (c *capturedCommands) counts() (kept, dropped int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, msgs := range c.byTopic {
+		kept += len(msgs)
+	}
+	for _, msgs := range c.dropped {
+		dropped += len(msgs)
+	}
+	return kept, dropped
+}
+
+// droppedReport renders every dropped payload per topic, for surfacing in the test
+// log when the drop-rate bound is exceeded.
+func (c *capturedCommands) droppedReport() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var b strings.Builder
+	for topic, msgs := range c.dropped {
+		fmt.Fprintf(&b, "\n  %s: %q", topic, msgs)
+	}
+	return b.String()
 }
 
 // validMode reports whether s is a well-formed evcc charge mode (or off).
@@ -155,10 +194,7 @@ var _ = Describe("End-to-end (embedded broker + real components)", func() {
 		cmds = newCapturedCommands()
 		subscribe := func(topic string, valid func(string) bool) {
 			tok := peer.Subscribe(topic, 1, func(_ paho.Client, m paho.Message) {
-				payload := string(m.Payload())
-				if valid(payload) {
-					cmds.add(m.Topic(), payload)
-				}
+				cmds.observe(m.Topic(), string(m.Payload()), valid)
 			})
 			Expect(tok.WaitTimeout(tokenWait)).To(BeTrue())
 			Expect(tok.Error()).NotTo(HaveOccurred())
@@ -206,6 +242,22 @@ var _ = Describe("End-to-end (embedded broker + real components)", func() {
 		// Real web server (driven via App().Test, never bound to a TCP port).
 		upd := updater.New(config.Update{Enabled: false}, "1.0.0")
 		srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0}, ctrl, st, upd, log)
+	})
+
+	AfterEach(func() {
+		// The observer filters the broker's rare framing artifact (see
+		// capturedCommands' doc). Every emitted value is also republished cleanly,
+		// so well-formed captures should dominate: assert drops stay a minority of
+		// the observed stream. A genuine corruption regression that garbles a large
+		// share of packets trips this bound instead of hiding behind the glitch;
+		// the report names the offending payloads.
+		kept, dropped := cmds.counts()
+		if dropped > 0 {
+			GinkgoWriter.Printf("observer dropped %d of %d observed payload(s):%s\n",
+				dropped, kept+dropped, cmds.droppedReport())
+		}
+		Expect(dropped).To(BeNumerically("<=", kept),
+			"malformed command payloads should stay a minority of the stream; a spike signals real corruption, not the broker framing artifact")
 	})
 
 	// publishSurplus publishes a healthy, connected state with ample PV surplus.
