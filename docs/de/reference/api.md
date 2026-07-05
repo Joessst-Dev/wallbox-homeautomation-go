@@ -136,8 +136,9 @@ Liefert die letzten Controller-/Kommando-Audit-Ereignisse als JSON. Query-Parame
 ### `GET /api/history`
 
 Liefert die letzten Energiefluss-Messwerte als JSON. Query-Parameter:
-`since`/`until` (RFC3339) zur Eingrenzung des Zeitfensters, Standard die letzten
-24 Stunden, begrenzt auf 7 Tage.
+`from`/`to` (RFC3339) zur Eingrenzung des Zeitfensters, Standard die letzten
+24 Stunden, begrenzt auf 7 Tage. Ein ungültiger Wert oder `to` vor `from`
+liefert `400`.
 
 ## Software-Update
 

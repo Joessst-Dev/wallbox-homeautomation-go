@@ -134,8 +134,9 @@ Returns recent controller/command audit events as JSON. Query params:
 
 ### `GET /api/history`
 
-Returns recent power-flow samples as JSON. Query params: `since`/`until`
+Returns recent power-flow samples as JSON. Query params: `from`/`to`
 (RFC3339) bounding the window, default the last 24 hours, capped at 7 days.
+An unparseable value, or `to` before `from`, returns `400`.
 
 ## Software update
 
