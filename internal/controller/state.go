@@ -46,6 +46,69 @@ const (
 // ModeOff is the desired evcc mode meaning "do not charge".
 const ModeOff = "off"
 
+// ReasonCode is a stable, machine-readable identifier for the branch of Decide
+// that produced a Decision, one per priority rule. Unlike Decision.Reason
+// (free-form English prose meant for logs), ReasonCode is a fixed enum the web
+// layer can map through its i18n catalog without matching on English text.
+type ReasonCode string
+
+const (
+	// ReasonStaleOff: stale data or disconnected broker forces off.
+	ReasonStaleOff ReasonCode = "stale_off"
+	// ReasonOverrideOff: manual override forces off.
+	ReasonOverrideOff ReasonCode = "override_off"
+	// ReasonOverrideOn: manual override forces on.
+	ReasonOverrideOn ReasonCode = "override_on"
+	// ReasonAwaitingData: not yet ready (required metrics not all seen fresh).
+	ReasonAwaitingData ReasonCode = "awaiting_data"
+	// ReasonNoVehicle: no vehicle connected under automatic control.
+	ReasonNoVehicle ReasonCode = "no_vehicle"
+	// ReasonSoCCap: vehicle SoC reached the configured cap.
+	ReasonSoCCap ReasonCode = "soc_cap"
+	// ReasonSoCLatch: SoC cap latch holding off until resumeBelow.
+	ReasonSoCLatch ReasonCode = "soc_latch"
+	// ReasonSurplusDwellStart: surplus just crossed the start threshold; dwell armed.
+	ReasonSurplusDwellStart ReasonCode = "surplus_dwell_start"
+	// ReasonSurplusCharging: start dwell elapsed; charging begins.
+	ReasonSurplusCharging ReasonCode = "surplus_charging"
+	// ReasonSurplusDwellPending: start dwell still counting down.
+	ReasonSurplusDwellPending ReasonCode = "surplus_dwell_pending"
+	// ReasonSurplusBelowStart: surplus below the start threshold; staying idle.
+	ReasonSurplusBelowStart ReasonCode = "surplus_below_start"
+	// ReasonStopDwellStart: surplus just dropped below the stop threshold; dwell armed.
+	ReasonStopDwellStart ReasonCode = "stop_dwell_start"
+	// ReasonStopLow: stop dwell elapsed; charging stops.
+	ReasonStopLow ReasonCode = "stop_low"
+	// ReasonStopDwellPending: stop dwell still counting down (still charging).
+	ReasonStopDwellPending ReasonCode = "stop_dwell_pending"
+	// ReasonCharging: surplus remains within the hysteresis band; charging continues.
+	ReasonCharging ReasonCode = "charging"
+)
+
+// reasonText maps each ReasonCode to its human-readable English audit-log prose.
+// Holding the prose here — instead of duplicating it at every Decide branch —
+// makes ReasonCode the single source of truth: a branch sets only the code (via
+// newDecision) and the Reason string follows, so the two cannot drift as
+// branches are added or edited. A completeness test asserts every declared code
+// has a non-empty entry.
+var reasonText = map[ReasonCode]string{
+	ReasonStaleOff:            "stale data / disconnected → off",
+	ReasonOverrideOff:         "manual override: off",
+	ReasonOverrideOn:          "manual override: on",
+	ReasonAwaitingData:        "waiting for initial data",
+	ReasonNoVehicle:           "no vehicle connected",
+	ReasonSoCCap:              "SoC >= cap",
+	ReasonSoCLatch:            "SoC latch (>= resumeBelow)",
+	ReasonSurplusDwellStart:   "surplus rising, dwell started",
+	ReasonSurplusCharging:     "surplus sustained → charging",
+	ReasonSurplusDwellPending: "surplus dwell pending",
+	ReasonSurplusBelowStart:   "surplus below start",
+	ReasonStopDwellStart:      "surplus dropping, stop dwell started",
+	ReasonStopLow:             "surplus low sustained → stop",
+	ReasonStopDwellPending:    "stop dwell pending",
+	ReasonCharging:            "charging",
+}
+
 // ControlState is the operator-settable runtime state layered on top of the
 // static config. It is the bundle the loop passes through the pure boundary
 // (InputsFromSnapshot) each tick.
@@ -105,6 +168,7 @@ type Timers struct {
 type Decision struct {
 	State       State
 	Timers      Timers
-	DesiredMode string // config.EnableModePV, config.EnableModeNow, or ModeOff
-	Reason      string // short human-readable explanation for the audit log
+	DesiredMode string     // config.EnableModePV, config.EnableModeNow, or ModeOff
+	Reason      string     // short human-readable explanation for the audit log
+	ReasonCode  ReasonCode // stable identifier for the branch that decided this
 }

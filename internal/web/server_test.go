@@ -659,6 +659,24 @@ var _ = Describe("Web Server", func() {
 			Expect(body).To(ContainSubstring("Recent sessions"))
 		})
 
+		It("renders the localized controller reason for a known reason code", func() {
+			ctrl.status.ReasonCode = controller.ReasonSurplusCharging
+
+			enResp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/status", nil)))
+			Expect(bodyString(enResp)).To(ContainSubstring("Surplus sustained — charging"))
+
+			deResp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/status", nil))
+			Expect(bodyString(deResp)).To(ContainSubstring("Überschuss anhaltend — lädt"))
+		})
+
+		It("falls back to the raw English reason string when the reason code is unmapped", func() {
+			ctrl.status.Reason = "surplus sufficient"
+			ctrl.status.ReasonCode = "some_future_code"
+
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/status", nil)))
+			Expect(bodyString(resp)).To(ContainSubstring("surplus sufficient"))
+		})
+
 		It("falls back to the raw session reason code when it has no translation", func() {
 			ended := time.Now()
 			st.sessions = []store.Session{
