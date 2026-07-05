@@ -33,6 +33,7 @@ Env key format: `WHA_<SECTION>_<KEY>` with nested camelCase keys uppercased full
 | Key | Default | Meaning |
 |-----|---------|---------|
 | `control.enableMode` | `pv` | Initial charge mode when charging is enabled (`pv` = surplus only, `now` = full power). Overridden by the dashboard **Charge power** toggle which persists across restarts. |
+| `control.autoProfile` | `surplus` | Initial auto-charge profile (`surplus`, `power_latch`, or `surplus_latch`). This is only the **startup default** — the runtime profile, and each latch profile's own start-threshold/target-SoC, are operator settings set from the dashboard's **Auto-charge profile** control and persisted in the database, not read from env/YAML after first boot. See [Dashboard → Auto-charge profile](/guide/dashboard#auto-charge-profile). |
 | `control.startThresholdW` | `1400` | Surplus (W) required to start charging |
 | `control.stopThresholdW` | `0` | Surplus (W) below which charging stops |
 | `control.startDwell` | `2m` | Surplus must hold this long before starting (anti-flap) |
@@ -90,6 +91,7 @@ evcc:
 
 control:
   enableMode: pv
+  autoProfile: surplus
   startThresholdW: 1400
   stopThresholdW: 0
   startDwell: 2m

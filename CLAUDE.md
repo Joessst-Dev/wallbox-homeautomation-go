@@ -9,6 +9,9 @@ It does **not** talk to hardware directly — evcc owns the device drivers (Sung
 inverter, Easee Home wallbox, Renault Twingo). `wha` reads evcc's state over MQTT, applies its
 own decision policy (start on sustained surplus, stop at SoC cap, fail-safe to off), and toggles
 the evcc loadpoint mode. The two product rules: surplus → start charging; vehicle SoC > 80% → stop.
+Beyond the default surplus hysteresis, two operator-selectable auto-charge profiles
+(`power_latch`/`surplus_latch`, `control.autoProfile`) latch onto PV production or net surplus
+and charge to completion at a per-profile target SoC instead of stopping/restarting on dips.
 
 ## Commands
 

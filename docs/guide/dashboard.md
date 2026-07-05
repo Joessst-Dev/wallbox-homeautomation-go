@@ -2,6 +2,12 @@
 
 The wha dashboard is available at `http://<your-pi>:8080`. It shows live status and lets you control charging without touching the config files.
 
+## Language
+
+The dashboard and the `/setup` page are available in **English** and **German**. Use
+the **EN** / **DE** switch in the top-right corner of the header to change language;
+your choice is saved in a cookie and remembered on future visits.
+
 ## Status overview
 
 The top of the dashboard shows the controller state at a glance:
@@ -56,6 +62,36 @@ The active override is highlighted. A "Manual" badge shows how long the override
 ::: tip
 If you set **Charge now** with a time limit, wha reverts to Auto when that time elapses — useful for a boost charge before a trip without forgetting to switch back.
 :::
+
+## Auto-charge profile
+
+The **Auto-charge profile** toggle (in the Override section) selects the automatic
+control strategy used whenever no manual override is active:
+
+| Profile | Behavior |
+|---------|----------|
+| **Surplus** (`surplus`) | Default hysteresis behavior: starts and stops on sustained PV surplus (see [How It Works](/guide/how-it-works)). |
+| **PV power** (`power_latch`) | Once PV production reaches its **Start threshold**, charging starts and continues **to completion** — it does not stop again if production later drops. |
+| **Surplus (latch)** (`surplus_latch`) | Same as above, but the trigger is the calculated **surplus** (PV minus home/battery use) instead of raw PV production. |
+
+Selecting **PV power** or **Surplus (latch)** reveals two extra inputs:
+
+- **Start threshold** — the trigger level (W, 100 W steps) that arms charging for that profile.
+- **Charge to** — the target vehicle SoC (%, 10% steps, 50–100) at which charging stops.
+
+::: tip Per-profile, persistent
+Each latch profile remembers its **own** Start threshold and Charge to values —
+switching from **PV power** to **Surplus (latch)** and back does not mix them up.
+All three settings (profile, threshold, target) persist across restarts.
+:::
+
+These two inputs only appear for a latch profile — the default **Surplus**
+profile always uses the static `startThresholdW`/`stopThresholdW` hysteresis
+from configuration instead (see [Configuration reference](/reference/configuration#control)).
+
+The SoC cap safety latch (see [How It Works → SoC cap](/guide/how-it-works#soc-cap-latched))
+and the evcc `limitSoc` dead-man backstop both track a latch profile's **Charge to**
+target while it's active, instead of the static `socCap`.
 
 ## Charge power
 

@@ -33,6 +33,7 @@ Env-Schlüsselformat: `WHA_<SECTION>_<KEY>` mit verschachtelten camelCase-Schlü
 | Schlüssel | Standard | Bedeutung |
 |-----|---------|---------|
 | `control.enableMode` | `pv` | Anfänglicher Lademodus, wenn die Ladung aktiviert ist (`pv` = nur Überschuss, `now` = volle Leistung). Wird vom Dashboard-Schalter **Ladeleistung** überschrieben, der über Neustarts hinweg gespeichert bleibt. |
+| `control.autoProfile` | `surplus` | Anfängliches Automatik-Profil beim Start (`surplus`, `power_latch` oder `surplus_latch`). Das ist nur der **Startwert** – das Laufzeitprofil sowie Startschwelle/Ziel-SoC jedes fest-Profils sind Bedienereinstellungen, die über den Dashboard-Schalter **Automatik-Profil** gesetzt und in der Datenbank gespeichert werden, nicht nach dem ersten Start aus Env/YAML gelesen. Siehe [Dashboard → Automatik-Profil](/de/guide/dashboard#automatik-profil). |
 | `control.startThresholdW` | `1400` | Zum Starten der Ladung erforderlicher Überschuss (W) |
 | `control.stopThresholdW` | `0` | Überschuss (W), unterhalb dessen die Ladung stoppt |
 | `control.startDwell` | `2m` | Der Überschuss muss so lange anhalten, bevor gestartet wird (Anti-Flattern) |
@@ -89,6 +90,7 @@ evcc:
 
 control:
   enableMode: pv
+  autoProfile: surplus
   startThresholdW: 1400
   stopThresholdW: 0
   startDwell: 2m

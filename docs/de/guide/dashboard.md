@@ -2,6 +2,12 @@
 
 Das wha-Dashboard ist unter `http://<dein-pi>:8080` erreichbar. Es zeigt den Live-Status und erlaubt es dir, die Ladung zu steuern, ohne die Konfigurationsdateien anzufassen.
 
+## Sprache
+
+Das Dashboard und die `/setup`-Seite sind auf **Englisch** und **Deutsch** verfügbar.
+Nutze den **EN**- / **DE**-Schalter oben rechts im Header, um die Sprache zu wechseln;
+deine Wahl wird in einem Cookie gespeichert und bei künftigen Besuchen beibehalten.
+
 ## Statusübersicht
 
 Der obere Bereich des Dashboards zeigt den Controller-Zustand auf einen Blick:
@@ -56,6 +62,36 @@ Die aktive Übersteuerung wird hervorgehoben. Ein „Manuell“-Abzeichen zeigt 
 ::: tip
 Setzt du **Jetzt laden** mit einem Zeitlimit, kehrt wha nach Ablauf der Zeit automatisch zu Auto zurück – praktisch für ein Boost-Laden vor einer Fahrt, ohne das Zurückschalten vergessen zu müssen.
 :::
+
+## Automatik-Profil
+
+Der Schalter **Automatik-Profil** (im Übersteuerungsbereich) wählt die automatische
+Steuerungsstrategie, die verwendet wird, solange keine manuelle Übersteuerung aktiv ist:
+
+| Profil | Verhalten |
+|---------|----------|
+| **Überschuss** (`surplus`) | Standard-Hysterese-Verhalten: startet und stoppt bei anhaltendem PV-Überschuss (siehe [Funktionsweise](/de/guide/how-it-works)). |
+| **PV-Leistung** (`power_latch`) | Erreicht die PV-Erzeugung ihre **Startschwelle**, startet die Ladung und läuft **bis zum Abschluss** durch – sie stoppt nicht mehr, wenn die Erzeugung später sinkt. |
+| **Überschuss (fest)** (`surplus_latch`) | Wie oben, aber ausgelöst durch den berechneten **Überschuss** (PV abzüglich Haus-/Batterieverbrauch) statt der reinen PV-Erzeugung. |
+
+Wählst du **PV-Leistung** oder **Überschuss (fest)**, erscheinen zwei zusätzliche Eingaben:
+
+- **Startschwelle** – der Auslösewert (W, in 100-W-Schritten), der die Ladung für dieses Profil scharf schaltet.
+- **Laden bis** – der Ziel-Ladezustand des Fahrzeugs (%, in 10-%-Schritten, 50–100), bei dem die Ladung stoppt.
+
+::: tip Pro Profil, dauerhaft
+Jedes fest-Profil merkt sich seine **eigenen** Werte für Startschwelle und Laden bis –
+wechselst du von **PV-Leistung** zu **Überschuss (fest)** und zurück, werden diese
+nicht vermischt. Alle drei Einstellungen (Profil, Schwelle, Ziel) überstehen Neustarts.
+:::
+
+Diese beiden Eingaben erscheinen nur bei einem fest-Profil – das Standardprofil
+**Überschuss** nutzt immer die statische `startThresholdW`/`stopThresholdW`-Hysterese
+aus der Konfiguration (siehe [Konfigurationsreferenz](/de/reference/configuration#control)).
+
+Die SoC-Deckel-Sicherheitsverriegelung (siehe [Funktionsweise → SoC-Deckel](/de/guide/how-it-works#soc-deckel-verriegelt))
+und der evcc-`limitSoc`-Totmann-Backstop folgen beide dem **Laden bis**-Ziel eines
+aktiven fest-Profils, statt dem statischen `socCap`.
 
 ## Ladeleistung
 
