@@ -943,7 +943,7 @@ var _ = Describe("Web Server", func() {
 
 	Describe("GET /setup", func() {
 		It("renders the guide without download links when no CA root is configured", func() {
-			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup", nil))
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/setup", nil)))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).To(ContainSubstring("Secure access"))
@@ -954,11 +954,35 @@ var _ = Describe("Web Server", func() {
 			srv = web.New(config.Web{BindAddr: "127.0.0.1", Port: 0, CARootPath: writeTestCert()},
 				ctrl, st, upd, nil)
 
-			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup", nil))
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/setup", nil)))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).To(ContainSubstring("Download root certificate"))
 			Expect(body).To(ContainSubstring("/setup/wha-ca.mobileconfig"))
+		})
+
+		It("localizes the page title and body by default (German)", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/setup", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("<title>Sicherer Zugriff — wha</title>"))
+			Expect(body).To(ContainSubstring("Sicherer Zugriff"))
+			Expect(body).To(ContainSubstring("Installationsschritte pro Gerät"))
+		})
+
+		It("embeds translated markup as real HTML, not escaped text", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/setup", nil)))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("<code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">tls internal</code>"))
+			Expect(body).NotTo(ContainSubstring("&lt;code"))
+		})
+
+		It("localizes the dashboard's /setup link label", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/", nil)))
+			Expect(bodyString(resp)).To(ContainSubstring("Secure access &amp; install as app"))
+
+			deResp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/", nil))
+			Expect(bodyString(deResp)).To(ContainSubstring("Sicherer Zugriff &amp; App-Installation"))
 		})
 	})
 

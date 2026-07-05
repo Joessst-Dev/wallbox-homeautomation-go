@@ -119,5 +119,32 @@
   "update.checked_prefix": "Geprüft",
   "update.check_btn": "Prüfen",
   "update.update_btn": "Aktualisieren auf v%s",
-  "update.confirm_message": "wha jetzt auf v%s aktualisieren? Der Dienst wird neu gestartet."
+  "update.confirm_message": "wha jetzt auf v%s aktualisieren? Der Dienst wird neu gestartet.",
+
+  "nav.setup_link": "Sicherer Zugriff & App-Installation",
+
+  "setup.title": "Sicherer Zugriff — wha",
+  "setup.secure_heading": "Sicherer Zugriff",
+  "setup.secure_intro": "Sowohl die Installation von wha als App als auch die Offline-Unterstützung erfordern eine sichere (HTTPS-)Verbindung. Läuft dieses Deployment hinter einem Reverse-Proxy mit einer internen Zertifizierungsstelle (z. B. Caddys <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">tls internal</code>), vertraue unten auf jedem Gerät dessen Stammzertifikat.",
+  "setup.secure_warning": "Eine Website kann kein Stammzertifikat stillschweigend in den Zertifikatsspeicher deines Geräts installieren — jede Plattform verlangt ein paar manuelle Schritte zur Installation und Bestätigung. Die folgenden Schritte sind der kürzeste Weg pro Gerät.",
+  "setup.download_cert_btn": "Stammzertifikat herunterladen",
+  "setup.download_profile_btn": "iOS/macOS-Konfigurationsprofil",
+  "setup.no_ca_body": "Für dieses Deployment ist kein CA-Stammzertifikat konfiguriert (<code class=\"rounded bg-slate-200 px-1 py-0.5 text-xs dark:bg-slate-700\">web.caRootPath</code> ist nicht gesetzt) — das ist für die lokale Entwicklung oder ein Setup ohne Reverse-Proxy zu erwarten. Wenn du bereits <code class=\"rounded bg-slate-200 px-1 py-0.5 text-xs dark:bg-slate-700\">https://</code> oder <code class=\"rounded bg-slate-200 px-1 py-0.5 text-xs dark:bg-slate-700\">localhost</code> verwendest, kannst du direkt zu „%s“ unten springen.",
+
+  "setup.steps_heading": "Installationsschritte pro Gerät",
+  "setup.ios_step1": "Lade das <strong>iOS/macOS-Konfigurationsprofil</strong> oben in Safari herunter.",
+  "setup.ios_step2": "Öffne <strong>Einstellungen → Allgemein → VPN &amp; Geräteverwaltung</strong> und tippe auf das heruntergeladene Profil.",
+  "setup.ios_step3": "Tippe auf <strong>Installieren</strong>, dann auf <strong>Einstellungen → Allgemein → Info → Zertifikatsvertrauenseinstellungen</strong> und aktiviere die volle Vertrauensstellung für das Zertifikat „wha secure access root CA“.",
+  "setup.ios_step4": "Lade das wha-Dashboard in Safari neu und nutze dann das Teilen-Menü → <strong>Zum Home-Bildschirm</strong>.",
+  "setup.android_step1": "Lade das <strong>Stammzertifikat</strong> oben in Chrome herunter.",
+  "setup.android_step2": "Öffne <strong>Einstellungen → Sicherheit → Verschlüsselung &amp; Anmeldedaten → Zertifikat installieren → CA-Zertifikat</strong> und wähle die heruntergeladene Datei aus.",
+  "setup.android_step3": "Lade das wha-Dashboard in Chrome neu; tippe auf <strong>App installieren</strong>, sobald das Banner oder Menü es anzeigt.",
+  "setup.macos_step1": "Lade das <strong>Stammzertifikat</strong> oben herunter oder führe das Hilfsskript aus: <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">scripts/trust-ca.sh</code>.",
+  "setup.macos_step2": "Öffne es bei manueller Installation in der <strong>Schlüsselbundverwaltung</strong>, füge es dem <strong>System</strong>-Schlüsselbund hinzu, doppelklicke es und setze <strong>Vertrauen → Immer vertrauen</strong>.",
+  "setup.windows_step1": "Lade das <strong>Stammzertifikat</strong> oben herunter oder führe das Hilfsskript als Administrator aus: <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">scripts/trust-ca.ps1</code>.",
+  "setup.windows_step2": "Doppelklicke bei manueller Installation die Datei, wähle <strong>Lokaler Computer → Vertrauenswürdige Stammzertifizierungsstellen</strong> und schließe den Assistenten ab.",
+  "setup.linux_step1": "Führe das Hilfsskript aus: <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">scripts/trust-ca.sh</code> (kopiert das Zertifikat nach <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">/usr/local/share/ca-certificates</code> und führt <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">update-ca-certificates</code> aus).",
+
+  "setup.install_heading": "Als App installieren",
+  "setup.install_body": "Sobald die Verbindung als vertrauenswürdig gilt (oder du <code class=\"rounded bg-slate-100 px-1 py-0.5 text-xs dark:bg-slate-800\">localhost</code> verwendest), lade dieses Dashboard neu und nutze die Installationsaufforderung deines Browsers — unter iOS das Teilen-Menü „Zum Home-Bildschirm“ —, um wha zu deinem Home-Bildschirm hinzuzufügen. Es startet im Vollbildmodus und behält eine einfache Offline-Ansicht, falls die Verbindung abbricht."
 }
