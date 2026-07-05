@@ -75,6 +75,18 @@ type fakeController struct {
 	chargePowerCalled bool
 	chargePowerMode   string
 	chargePowerErr    error
+
+	autoProfileCalled bool
+	autoProfileValue  string
+	autoProfileErr    error
+
+	startThresholdCalled bool
+	startThresholdValue  float64
+	startThresholdErr    error
+
+	targetSoCCalled bool
+	targetSoCValue  int
+	targetSoCErr    error
 }
 
 func (f *fakeController) Status() controller.StatusView { return f.status }
@@ -91,6 +103,24 @@ func (f *fakeController) SetChargePower(mode string) error {
 	f.chargePowerCalled = true
 	f.chargePowerMode = mode
 	return f.chargePowerErr
+}
+
+func (f *fakeController) SetAutoProfile(profile string) error {
+	f.autoProfileCalled = true
+	f.autoProfileValue = profile
+	return f.autoProfileErr
+}
+
+func (f *fakeController) SetStartThreshold(w float64) error {
+	f.startThresholdCalled = true
+	f.startThresholdValue = w
+	return f.startThresholdErr
+}
+
+func (f *fakeController) SetTargetSoC(pct int) error {
+	f.targetSoCCalled = true
+	f.targetSoCValue = pct
+	return f.targetSoCErr
 }
 
 // fakeUpdater is a deterministic stand-in for *updater.Updater. It records the
@@ -485,6 +515,121 @@ var _ = Describe("Web Server", func() {
 			}
 
 			Expect(stored).To(Equal("pv"), "earlier stored mode must not be corrupted by a later request's recycled buffer")
+		})
+	})
+
+	Describe("POST /api/auto-profile", func() {
+		It("sets the profile and returns JSON ok without htmx", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/auto-profile",
+				strings.NewReader("profile=power_latch"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.autoProfileCalled).To(BeTrue())
+			Expect(ctrl.autoProfileValue).To(Equal("power_latch"))
+			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
+		})
+
+		It("returns the refreshed controls partial for htmx requests", func() {
+			req := enRequest(httptest.NewRequest(http.MethodPost, "/api/auto-profile",
+				strings.NewReader("profile=surplus_latch")))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("HX-Request", "true")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Auto-charge profile"))
+		})
+
+		It("returns 400 for an invalid profile (ErrInvalidAutoProfile)", func() {
+			ctrl.autoProfileErr = fmt.Errorf("%w: bogus", controller.ErrInvalidAutoProfile)
+			req := httptest.NewRequest(http.MethodPost, "/api/auto-profile",
+				strings.NewReader("profile=bogus"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+
+		It("returns 500 when persisting the profile fails", func() {
+			ctrl.autoProfileErr = fmt.Errorf("persist auto profile: disk full")
+			req := httptest.NewRequest(http.MethodPost, "/api/auto-profile",
+				strings.NewReader("profile=power_latch"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+	})
+
+	Describe("POST /api/start-threshold", func() {
+		It("sets the threshold and returns JSON ok without htmx", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/start-threshold",
+				strings.NewReader("startThresholdW=2000"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.startThresholdCalled).To(BeTrue())
+			Expect(ctrl.startThresholdValue).To(Equal(2000.0))
+			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
+		})
+
+		It("returns 400 for an invalid threshold (ErrInvalidStartThreshold)", func() {
+			ctrl.startThresholdErr = fmt.Errorf("%w: bogus", controller.ErrInvalidStartThreshold)
+			req := httptest.NewRequest(http.MethodPost, "/api/start-threshold",
+				strings.NewReader("startThresholdW=50"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+
+		It("returns 500 when persisting the threshold fails", func() {
+			ctrl.startThresholdErr = fmt.Errorf("persist start threshold: disk full")
+			req := httptest.NewRequest(http.MethodPost, "/api/start-threshold",
+				strings.NewReader("startThresholdW=2000"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+	})
+
+	Describe("POST /api/target-soc", func() {
+		It("sets the target and returns JSON ok without htmx", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/target-soc",
+				strings.NewReader("targetSoC=90"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.targetSoCCalled).To(BeTrue())
+			Expect(ctrl.targetSoCValue).To(Equal(90))
+			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
+		})
+
+		It("returns 400 for an invalid target (ErrInvalidTargetSoC)", func() {
+			ctrl.targetSoCErr = fmt.Errorf("%w: bogus", controller.ErrInvalidTargetSoC)
+			req := httptest.NewRequest(http.MethodPost, "/api/target-soc",
+				strings.NewReader("targetSoC=5"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+
+		It("returns 500 when persisting the target fails", func() {
+			ctrl.targetSoCErr = fmt.Errorf("persist target SoC: disk full")
+			req := httptest.NewRequest(http.MethodPost, "/api/target-soc",
+				strings.NewReader("targetSoC=90"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
 		})
 	})
 

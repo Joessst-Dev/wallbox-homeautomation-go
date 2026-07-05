@@ -14,6 +14,7 @@ import (
 func baseConfig() config.Control {
 	return config.Control{
 		EnableMode:       config.EnableModePV,
+		AutoProfile:      config.AutoProfileSurplus,
 		StartThresholdW:  1400,
 		StopThresholdW:   0,
 		StartDwell:       60 * time.Second,
@@ -319,6 +320,37 @@ var _ = Describe("Decide", func() {
 			Expect(d.State).To(Equal(controller.StateIdle))
 			Expect(d.ReasonCode).To(Equal(controller.ReasonSurplusBelowStart))
 		})
+
+		It("ignores a leftover TargetSoC under the default surplus profile and caps at cfg.SoCCap", func() {
+			// Regression: TargetSoC is a global persisted setting not reset when
+			// switching profiles. A 90% target left over from a previous latch
+			// session must not raise the safety cap once back on surplus.
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfileSurplus // explicit surplus (as after a profile switch)
+			in.TargetSoC = 90                          // stale leftover from a latch session
+			in.VehicleSoC = 85                         // above cfg.SoCCap (80), below the stale target
+			in.ChargeW = 10000
+			in.GridW = -10000 // plenty of surplus
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateSocReached))
+			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCCap))
+		})
+
+		It("ignores a leftover TargetSoC when AutoProfile is unset (falls back to surplus)", func() {
+			in := baseInputs() // AutoProfile "" → falls back to cfg.AutoProfile (surplus)
+			in.TargetSoC = 100
+			in.VehicleSoC = 85
+			in.ChargeW = 10000
+			in.GridW = -10000
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateSocReached))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCCap))
+		})
 	})
 
 	Context("start dwell from idle", func() {
@@ -520,6 +552,235 @@ var _ = Describe("Decide", func() {
 	})
 })
 
+var _ = Describe("Decide (latch profiles)", func() {
+	var (
+		cfg   config.Control
+		clock *controller.FakeClock
+		t0    time.Time
+	)
+
+	BeforeEach(func() {
+		cfg = baseConfig()
+		t0 = time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+		clock = controller.NewFakeClock(t0)
+	})
+
+	Context("power_latch profile (triggers on PV production)", func() {
+		It("stays idle below the PV start threshold, even with a huge net surplus", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.PVW = 1000     // below the 1400W threshold
+			in.GridW = -10000 // huge export/surplus — irrelevant to power_latch
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchBelowStart))
+		})
+
+		It("arms the start dwell once PV production crosses the threshold, despite no net surplus", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.PVW = 1500   // >= 1400W threshold
+			in.GridW = 5000 // heavy import: no net surplus — irrelevant to power_latch
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateSurplusPending))
+			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.Timers.CrossedUpAt).To(Equal(t0))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchStart))
+		})
+
+		It("starts charging at full power once the start dwell elapses", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.PVW = 1500
+
+			timers := controller.Timers{CrossedUpAt: t0}
+			clock.Advance(60 * time.Second) // == start dwell
+
+			d := controller.Decide(clock.Now(), in, controller.StateSurplusPending, timers, cfg)
+
+			Expect(d.State).To(Equal(controller.StateCharging))
+			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchCharging))
+		})
+	})
+
+	Context("surplus_latch profile (triggers on net surplus)", func() {
+		It("stays idle below the surplus start threshold, despite huge PV production", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfileSurplusLatch
+			in.PVW = 10000 // huge PV — irrelevant to surplus_latch
+			in.GridW = 5000
+			in.ChargeW = 0 // surplus -5000, below threshold
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchBelowStart))
+		})
+
+		It("arms the start dwell once net surplus crosses the threshold", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfileSurplusLatch
+			in.PVW = 0
+			in.ChargeW = 1500 // surplus 1500 >= threshold
+			in.GridW = 0
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateSurplusPending))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchStart))
+		})
+	})
+
+	Context("latch holds through a trigger dip", func() {
+		It("keeps charging at full power even when the trigger collapses to zero", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.PVW = 0 // trigger fully collapsed
+			in.GridW = 5000
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateCharging))
+			Expect(d.DesiredMode).To(Equal(config.EnableModeNow))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchCharging))
+		})
+
+		It("re-latches a stray stop_pending left over from a mid-flight profile switch", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfileSurplusLatch
+			in.GridW = 5000 // would trigger a stop under the surplus profile
+
+			d := controller.Decide(clock.Now(), in, controller.StateStopPending, controller.Timers{CrossedDownAt: t0}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateCharging))
+			Expect(d.Timers).To(Equal(controller.Timers{}))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchCharging))
+		})
+	})
+
+	Context("runtime start-threshold override", func() {
+		It("uses the operator-chosen threshold instead of the config default", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.StartThresholdW = 3000 // overrides the 1400W config default
+			in.PVW = 2000             // below the override, above the config default
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchBelowStart))
+		})
+	})
+
+	Context("stop at the runtime target SoC", func() {
+		It("stops once VehicleSoC reaches the runtime target", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.TargetSoC = 90
+			in.VehicleSoC = 90
+			in.PVW = 10000 // would otherwise keep charging
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateSocReached))
+			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCCap))
+		})
+
+		It("keeps latching below the runtime target", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.TargetSoC = 90
+			in.VehicleSoC = 89
+			in.PVW = 10000
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateCharging))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonLatchCharging))
+		})
+
+		It("shifts the resume boundary with the target so the latch band width is unchanged", func() {
+			// cfg: SoCCap 80, SoCResumeBelow 78 → band width 2; target 90 → resume at 88.
+			atBoundary := baseInputs()
+			atBoundary.AutoProfile = config.AutoProfilePowerLatch
+			atBoundary.TargetSoC = 90
+			atBoundary.VehicleSoC = 88
+			atBoundary.PVW = 10000
+
+			d := controller.Decide(clock.Now(), atBoundary, controller.StateSocReached, controller.Timers{}, cfg)
+			Expect(d.State).To(Equal(controller.StateSocReached))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonSoCLatch))
+
+			belowBoundary := baseInputs()
+			belowBoundary.AutoProfile = config.AutoProfilePowerLatch
+			belowBoundary.TargetSoC = 90
+			belowBoundary.VehicleSoC = 87 // below the 88 resume boundary
+			belowBoundary.PVW = 10000
+
+			d2 := controller.Decide(clock.Now(), belowBoundary, controller.StateSocReached, controller.Timers{}, cfg)
+			Expect(d2.State).To(Equal(controller.StateSurplusPending))
+			Expect(d2.ReasonCode).To(Equal(controller.ReasonLatchStart))
+		})
+	})
+
+	Context("fail-safes still take priority over an active latch", func() {
+		It("forces off when data is stale, regardless of the trigger", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfilePowerLatch
+			in.Stale = true
+			in.PVW = 10000
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateFailSafe))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonStaleOff))
+		})
+
+		It("a ForceOff override wins over an active latch", func() {
+			in := baseInputs()
+			in.AutoProfile = config.AutoProfileSurplusLatch
+			in.Override = controller.OverrideForceOff
+			in.ChargeW = 10000
+			in.GridW = -10000
+
+			d := controller.Decide(clock.Now(), in, controller.StateCharging, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.DesiredMode).To(Equal(controller.ModeOff))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonOverrideOff))
+		})
+
+		It("stays off when not ready", func() {
+			in := controller.Inputs{Ready: false, AutoProfile: config.AutoProfilePowerLatch, PVW: 10000}
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonAwaitingData))
+		})
+
+		It("never charges when no vehicle is connected", func() {
+			in := baseInputs()
+			in.Connected = false
+			in.AutoProfile = config.AutoProfileSurplusLatch
+			in.ChargeW = 10000
+			in.GridW = -10000
+
+			d := controller.Decide(clock.Now(), in, controller.StateIdle, controller.Timers{}, cfg)
+
+			Expect(d.State).To(Equal(controller.StateIdle))
+			Expect(d.ReasonCode).To(Equal(controller.ReasonNoVehicle))
+		})
+	})
+})
+
 var _ = Describe("LimitSoCTarget", func() {
 	var (
 		cfg config.Control
@@ -592,6 +853,30 @@ var _ = Describe("LimitSoCTarget", func() {
 			Override:             controller.OverrideForceOn,
 			OverrideCapBypass:    true,
 			OverrideCapBypassSoC: 110,
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCMax))
+	})
+
+	It("uses the effective target SoC for an active latch profile, unclamped", func() {
+		in := controller.Inputs{
+			Override:    controller.OverrideAuto,
+			AutoProfile: config.AutoProfilePowerLatch,
+			TargetSoC:   65, // below SoCCap (80): a latch target is not clamped to SoCCap+1
+		}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(65))
+	})
+
+	It("falls back to cfg.SoCCap for a latch profile with no target override", func() {
+		in := controller.Inputs{Override: controller.OverrideAuto, AutoProfile: config.AutoProfileSurplusLatch}
+		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCCap))
+	})
+
+	It("a cap-bypass override still wins over an active latch profile", func() {
+		in := controller.Inputs{
+			Override:          controller.OverrideForceOn,
+			OverrideCapBypass: true,
+			AutoProfile:       config.AutoProfilePowerLatch,
+			TargetSoC:         65,
 		}
 		Expect(controller.LimitSoCTarget(t0, in, cfg)).To(Equal(cfg.SoCMax))
 	})

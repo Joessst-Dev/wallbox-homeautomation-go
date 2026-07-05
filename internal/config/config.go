@@ -102,6 +102,12 @@ type Control struct {
 	// "now" charges at full available power.
 	EnableMode string `mapstructure:"enableMode"`
 
+	// AutoProfile selects the automatic charging strategy: AutoProfileSurplus
+	// (default, existing hysteresis) or one of the "charge to completion" latch
+	// profiles (AutoProfilePowerLatch, AutoProfileSurplusLatch). It is only the
+	// initial default — the runtime, persisted value lives on ControlState.
+	AutoProfile string `mapstructure:"autoProfile"`
+
 	StartThresholdW float64 `mapstructure:"startThresholdW"`
 	StopThresholdW  float64 `mapstructure:"stopThresholdW"`
 
@@ -178,6 +184,17 @@ const (
 	EnableModeNow = "now"
 )
 
+// Auto-charge profiles. AutoProfileSurplus is the existing surplus-hysteresis
+// behavior (start/stop thresholds + dwell). AutoProfilePowerLatch and
+// AutoProfileSurplusLatch are "charge to completion" profiles: once triggered
+// (by PV production or net surplus, respectively) they charge at full power
+// until the target SoC is reached, without stopping on a surplus dip.
+const (
+	AutoProfileSurplus      = "surplus"
+	AutoProfilePowerLatch   = "power_latch"
+	AutoProfileSurplusLatch = "surplus_latch"
+)
+
 // Default returns a Config populated with sensible defaults for a single-Easee,
 // PV-surplus setup. The CLI overlays file/env/flag values on top of this.
 func Default() Config {
@@ -192,6 +209,7 @@ func Default() Config {
 		},
 		Control: Control{
 			EnableMode:        EnableModePV,
+			AutoProfile:       AutoProfileSurplus,
 			StartThresholdW:   1400, // ~min charge power, single-phase Twingo
 			StopThresholdW:    0,
 			StartDwell:        2 * time.Minute, // generous: protect Easee from cloud-latency churn
@@ -238,6 +256,12 @@ func (c Config) Validate() error {
 	if c.Control.EnableMode != EnableModePV && c.Control.EnableMode != EnableModeNow {
 		return fmt.Errorf("control.enableMode must be %q or %q, got %q",
 			EnableModePV, EnableModeNow, c.Control.EnableMode)
+	}
+	switch c.Control.AutoProfile {
+	case AutoProfileSurplus, AutoProfilePowerLatch, AutoProfileSurplusLatch:
+	default:
+		return fmt.Errorf("control.autoProfile must be %q, %q, or %q, got %q",
+			AutoProfileSurplus, AutoProfilePowerLatch, AutoProfileSurplusLatch, c.Control.AutoProfile)
 	}
 	if c.Control.StartThresholdW <= c.Control.StopThresholdW {
 		return fmt.Errorf("control.startThresholdW (%.0f) must be greater than stopThresholdW (%.0f)",

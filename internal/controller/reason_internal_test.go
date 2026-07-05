@@ -25,6 +25,9 @@ var allReasonCodes = []ReasonCode{
 	ReasonStopLow,
 	ReasonStopDwellPending,
 	ReasonCharging,
+	ReasonLatchStart,
+	ReasonLatchCharging,
+	ReasonLatchBelowStart,
 }
 
 var _ = Describe("reasonText", func() {

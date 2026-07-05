@@ -213,6 +213,89 @@ func (s *Server) handleChargePower(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
+// autoProfileRequest is the accepted body for POST /api/auto-profile.
+type autoProfileRequest struct {
+	Profile string `json:"profile" form:"profile"`
+}
+
+// handleAutoProfile sets the persistent auto-charge profile (surplus|power_latch|
+// surplus_latch). For htmx requests it returns the refreshed controls partial;
+// otherwise {"ok":true}.
+func (s *Server) handleAutoProfile(c *fiber.Ctx) error {
+	var req autoProfileRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid auto-profile body")
+	}
+	// Clone before retaining: Fiber's BodyParser (non-Immutable) returns strings
+	// aliasing the pooled fasthttp request buffer, and SetAutoProfile stores this
+	// into long-lived state (same hazard as handleChargePower). StartThresholdW/
+	// TargetSoC are value types, so only the profile string needs copying.
+	if err := s.ctrl.SetAutoProfile(strings.Clone(req.Profile)); err != nil {
+		if errors.Is(err, controller.ErrInvalidAutoProfile) {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		s.log.Warn("web: set auto profile failed", "err", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to set auto profile")
+	}
+	if c.Get("HX-Request") != "" {
+		return s.renderControlsPartial(c)
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// startThresholdRequest is the accepted body for POST /api/start-threshold.
+type startThresholdRequest struct {
+	StartThresholdW float64 `json:"startThresholdW" form:"startThresholdW"`
+}
+
+// handleStartThreshold sets the persistent start-threshold override (watts,
+// 100 W steps) used by the active auto-charge profile's start trigger. For
+// htmx requests it returns the refreshed controls partial; otherwise
+// {"ok":true}.
+func (s *Server) handleStartThreshold(c *fiber.Ctx) error {
+	var req startThresholdRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid start-threshold body")
+	}
+	if err := s.ctrl.SetStartThreshold(req.StartThresholdW); err != nil {
+		if errors.Is(err, controller.ErrInvalidStartThreshold) {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		s.log.Warn("web: set start threshold failed", "err", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to set start threshold")
+	}
+	if c.Get("HX-Request") != "" {
+		return s.renderControlsPartial(c)
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
+// targetSoCRequest is the accepted body for POST /api/target-soc.
+type targetSoCRequest struct {
+	TargetSoC int `json:"targetSoC" form:"targetSoC"`
+}
+
+// handleTargetSoC sets the persistent target-SoC override (10 % steps,
+// 50-100) used as the stop target by the active auto-charge profile. For htmx
+// requests it returns the refreshed controls partial; otherwise {"ok":true}.
+func (s *Server) handleTargetSoC(c *fiber.Ctx) error {
+	var req targetSoCRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid target-soc body")
+	}
+	if err := s.ctrl.SetTargetSoC(req.TargetSoC); err != nil {
+		if errors.Is(err, controller.ErrInvalidTargetSoC) {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		s.log.Warn("web: set target soc failed", "err", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to set target soc")
+	}
+	if c.Get("HX-Request") != "" {
+		return s.renderControlsPartial(c)
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
 // handleUpdatePartial renders just the software-update fragment (htmx poll/
 // refresh target).
 func (s *Server) handleUpdatePartial(c *fiber.Ctx) error {

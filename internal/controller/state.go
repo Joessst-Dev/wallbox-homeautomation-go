@@ -83,6 +83,15 @@ const (
 	ReasonStopDwellPending ReasonCode = "stop_dwell_pending"
 	// ReasonCharging: surplus remains within the hysteresis band; charging continues.
 	ReasonCharging ReasonCode = "charging"
+	// ReasonLatchStart: a latch profile's trigger just crossed the start
+	// threshold; dwell armed.
+	ReasonLatchStart ReasonCode = "latch_start"
+	// ReasonLatchCharging: a latch profile is charging (either the start dwell
+	// elapsed, or it is already latched and holding through a trigger dip).
+	ReasonLatchCharging ReasonCode = "latch_charging"
+	// ReasonLatchBelowStart: a latch profile's trigger is below the start
+	// threshold; staying idle.
+	ReasonLatchBelowStart ReasonCode = "latch_below_start"
 )
 
 // reasonText maps each ReasonCode to its human-readable English audit-log prose.
@@ -107,6 +116,9 @@ var reasonText = map[ReasonCode]string{
 	ReasonStopLow:             "surplus low sustained → stop",
 	ReasonStopDwellPending:    "stop dwell pending",
 	ReasonCharging:            "charging",
+	ReasonLatchStart:          "latch trigger rising, dwell started",
+	ReasonLatchCharging:       "latch charging to target SoC",
+	ReasonLatchBelowStart:     "latch trigger below start",
 }
 
 // ControlState is the operator-settable runtime state layered on top of the
@@ -128,6 +140,16 @@ type ControlState struct {
 	// enabled (config.EnableModePV or config.EnableModeNow). It is a persistent,
 	// global operator setting, not tied to the override.
 	ChargePower string
+	// AutoProfile is the runtime auto-charge profile (config.AutoProfileSurplus,
+	// AutoProfilePowerLatch, or AutoProfileSurplusLatch). Empty falls back to
+	// cfg.AutoProfile.
+	AutoProfile string
+	// StartThresholdW overrides cfg.StartThresholdW for the active profile's
+	// start trigger. Zero falls back to cfg.StartThresholdW.
+	StartThresholdW float64
+	// TargetSoC overrides cfg.SoCCap as the stop target for the active profile.
+	// Zero falls back to cfg.SoCCap.
+	TargetSoC int
 }
 
 // Inputs is a snapshot of all metrics and flags the decision engine consumes.
@@ -156,6 +178,15 @@ type Inputs struct {
 	OverrideCapBypassSoC int
 	// ChargePower is the effective evcc charge mode (pv|now) when charging is on.
 	ChargePower string
+	// AutoProfile is the runtime auto-charge profile; empty falls back to
+	// cfg.AutoProfile. See ControlState.AutoProfile.
+	AutoProfile string
+	// StartThresholdW overrides cfg.StartThresholdW for the active profile;
+	// zero falls back to cfg.StartThresholdW. See ControlState.StartThresholdW.
+	StartThresholdW float64
+	// TargetSoC overrides cfg.SoCCap as the stop target for the active profile;
+	// zero falls back to cfg.SoCCap. See ControlState.TargetSoC.
+	TargetSoC int
 }
 
 // Timers carries the dwell bookkeeping between decisions.
