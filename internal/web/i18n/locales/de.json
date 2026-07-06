@@ -124,6 +124,11 @@
   "update.confirm_message": "wha jetzt auf v%s aktualisieren? Der Dienst wird neu gestartet.",
 
   "nav.setup_link": "Sicherer Zugriff & App-Installation",
+  "nav.settings_link": "Einstellungen",
+
+  "settings.title": "Einstellungen — wha",
+  "settings.back_link": "Zurück zum Dashboard",
+  "settings.profile_heading": "Automatisches Laden",
 
   "setup.title": "Sicherer Zugriff — wha",
   "setup.secure_heading": "Sicherer Zugriff",

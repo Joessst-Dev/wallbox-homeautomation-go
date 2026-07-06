@@ -257,7 +257,15 @@ type dashboardVM struct {
 	Lang     string
 	Status   statusView
 	Sessions sessionsView
-	Update   updateView
+}
+
+// settingsVM is the /settings page model: the auto-charge configuration
+// (rendered from Status via partials/settings) and the software-update card.
+type settingsVM struct {
+	Title  string
+	Lang   string
+	Status statusView
+	Update updateView
 }
 
 // statusView, sessionsView, and updateView wrap the logic-free JSON view

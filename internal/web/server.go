@@ -181,8 +181,10 @@ func (s *Server) registerRoutes() {
 
 	// HTML pages and htmx partials.
 	app.Get("/", s.handleDashboard)
+	app.Get("/settings", s.handleSettings)
 	app.Get("/partials/status", s.handleStatusPartial)
 	app.Get("/partials/controls", s.handleControlsPartial)
+	app.Get("/partials/settings", s.handleSettingsPartial)
 	app.Get("/partials/sessions", s.handleSessionsPartial)
 	app.Get("/partials/update", s.handleUpdatePartial)
 	app.Get("/lang/:code", s.handleSetLang)

@@ -1,0 +1,44 @@
+<section class="space-y-4 sm:space-y-5">
+  <!-- Back to the live dashboard. -->
+  <a href="/"
+     class="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:text-slate-400 dark:hover:text-slate-200">
+    <span aria-hidden="true">&larr;</span>
+    {{ t .Lang "settings.back_link" }}
+  </a>
+
+  <!--
+    Auto-charge configuration: profile selector plus the latch-only start
+    threshold / target-SoC forms. Polled slowly (60s) to pick up changes from
+    other sessions or restarts; the profile/threshold/target actions also
+    refresh this block immediately via hx-target="#settings-controls". The slow
+    cadence keeps a poll from resetting an in-progress input.
+  -->
+  <div id="settings-controls"
+       hx-get="/partials/settings"
+       hx-trigger="every 60s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/settings" .Status}}
+  </div>
+
+  <!--
+    Software update: shows the running version and (when the updater sidecar is
+    enabled) lets the operator check GHCR and apply a newer release. Polled
+    slowly so an in-flight update's progress surfaces without spamming the
+    handler; the check/apply actions target this same #update container.
+  -->
+  <div id="update"
+       hx-get="/partials/update"
+       hx-trigger="every 15s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/update" .Update}}
+  </div>
+
+  <!-- Secure access / install-as-app entry point. -->
+  <a href="/setup"
+     class="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
+    <span>{{ t .Lang "nav.setup_link" }}</span>
+    <span aria-hidden="true">&rarr;</span>
+  </a>
+</section>
