@@ -183,6 +183,7 @@ func (s *Server) registerRoutes() {
 	app.Get("/", s.handleDashboard)
 	app.Get("/settings", s.handleSettings)
 	app.Get("/partials/status", s.handleStatusPartial)
+	app.Get("/partials/detail", s.handleDetailPartial)
 	app.Get("/partials/controls", s.handleControlsPartial)
 	app.Get("/partials/settings", s.handleSettingsPartial)
 	app.Get("/partials/sessions", s.handleSessionsPartial)

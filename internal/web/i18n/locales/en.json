@@ -43,6 +43,7 @@
   "status.updated_prefix": "Updated",
   "status.awaiting_first_update": "Awaiting first update",
   "status.power_flow_heading": "Power flow",
+  "status.detail_summary": "Details",
   "status.surplus_label": "Surplus",
   "status.surplus_available": "%s kW available",
   "status.pv_label": "PV",
@@ -82,7 +83,7 @@
   "controls.latch_compare_body": "Both <strong>PV power (latch)</strong> and <strong>Surplus (latch)</strong> are \"charge to completion\" modes: once started, they keep charging at full power through a dip in the trigger, stopping only at the target SoC. They differ only in what starts them — <strong>PV power (latch)</strong> reacts to total solar production and may pull from the grid, while <strong>Surplus (latch)</strong> reacts only to genuine leftover power after the house (battery discharge doesn't count as surplus). Fail-safes (stale data, disconnect, override, SoC cap) always take priority over either mode.",
   "controls.start_threshold_label": "Start threshold",
   "controls.target_soc_label": "Charge to",
-  "controls.set_btn": "Set",
+  "controls.advanced_summary": "Advanced",
   "controls.auto_btn": "Auto",
   "controls.charge_now_btn": "Charge now",
   "controls.stop_btn": "Stop",
@@ -125,9 +126,9 @@
 
   "nav.setup_link": "Secure access & install as app",
   "nav.settings_link": "Settings",
+  "nav.dashboard_link": "Dashboard",
 
   "settings.title": "Settings — wha",
-  "settings.back_link": "Back to dashboard",
   "settings.profile_heading": "Auto-charge",
 
   "setup.title": "Secure access — wha",

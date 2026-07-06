@@ -49,6 +49,7 @@ func (s *Server) handleDashboard(c *fiber.Ctx) error {
 	vm := dashboardVM{
 		Title:    s.i18n.T(lang, "dashboard.title"),
 		Lang:     lang,
+		Active:   "home",
 		Status:   statusView{StatusVM: status, Lang: lang},
 		Sessions: sessionsView{Lang: lang, Sessions: newSessionVMs(sessions)},
 	}
@@ -62,6 +63,7 @@ func (s *Server) handleSettings(c *fiber.Ctx) error {
 	vm := settingsVM{
 		Title:  s.i18n.T(lang, "settings.title"),
 		Lang:   lang,
+		Active: "settings",
 		Status: statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: lang},
 		Update: updateView{UpdateVM: newUpdateVM(s.now(), s.upd.Info(c.Context())), Lang: lang},
 	}
@@ -91,6 +93,13 @@ func (s *Server) handleStatusPartial(c *fiber.Ctx) error {
 func (s *Server) renderStatusPartial(c *fiber.Ctx) error {
 	vm := statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: langFromCtx(c)}
 	return c.Render("partials/status", vm)
+}
+
+// handleDetailPartial renders the collapsed secondary-detail fragment
+// (power-flow breakdown + connection health) shown under the compact hero.
+func (s *Server) handleDetailPartial(c *fiber.Ctx) error {
+	vm := statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: langFromCtx(c)}
+	return c.Render("partials/detail", vm)
 }
 
 // handleControlsPartial renders just the operator-controls fragment (slow poll /

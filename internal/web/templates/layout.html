@@ -2,7 +2,7 @@
 <html lang="{{.Lang}}" class="h-full">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#0f172a">
   <title>{{.Title}}</title>
@@ -24,7 +24,7 @@
   </script>
 </head>
 <body class="min-h-full bg-slate-100 text-slate-900 antialiased selection:bg-emerald-200 selection:text-emerald-900 dark:bg-slate-950 dark:text-slate-100">
-  <div class="mx-auto w-full max-w-screen-md px-4 py-5 sm:px-6 sm:py-8">
+  <div class="mx-auto w-full max-w-screen-md px-4 pt-5 pb-28 sm:px-6 sm:pt-8 sm:pb-32">
     <header class="mb-5 flex items-center gap-3 sm:mb-7">
       <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm shadow-emerald-500/30">
         <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -53,5 +53,22 @@
       {{ t .Lang "nav.footer" }}
     </footer>
   </div>
+
+  {{- /* Persistent bottom tab bar for thumb-reach navigation on mobile. Sits
+         above the iOS home indicator via the safe-area inset. */ -}}
+  <nav aria-label="Primary" class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
+    <div class="mx-auto grid max-w-screen-md grid-cols-2">
+      <a href="/" aria-current="{{if eq .Active "home"}}page{{else}}false{{end}}"
+         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "home"}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
+        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V10"/></svg>
+        {{ t .Lang "nav.dashboard_link" }}
+      </a>
+      <a href="/settings" aria-current="{{if eq .Active "settings"}}page{{else}}false{{end}}"
+         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "settings"}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
+        <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
+        {{ t .Lang "nav.settings_link" }}
+      </a>
+    </div>
+  </nav>
 </body>
 </html>

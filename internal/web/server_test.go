@@ -359,6 +359,20 @@ var _ = Describe("Web Server", func() {
 		})
 	})
 
+	Describe("GET /partials/detail", func() {
+		It("renders the secondary detail fragment (power flow + health) without the layout", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/detail", nil)))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Power flow"))
+			Expect(body).To(ContainSubstring("Health"))
+			Expect(body).To(ContainSubstring("MQTT broker"))
+			Expect(body).NotTo(ContainSubstring(`hx-post="/api/override"`),
+				"the override form belongs in controls, not the detail partial")
+		})
+	})
+
 	Describe("GET /partials/controls", func() {
 		It("renders the controls fragment without the layout", func() {
 			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/controls", nil)))
