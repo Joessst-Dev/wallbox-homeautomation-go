@@ -12,7 +12,7 @@
               hx-post="/api/auto-profile" hx-vals='{"profile":"surplus"}'
               hx-target="#settings-controls" hx-swap="innerHTML"
               aria-pressed="{{if not .AutoProfileIsLatch}}true{{else}}false{{end}}"
-              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500
+              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500
                      {{if not .AutoProfileIsLatch}}border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-500 dark:border-emerald-500 dark:bg-emerald-500/15 dark:text-emerald-300{{else}}border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700{{end}}">
         {{ t .Lang "controls.profile_surplus_btn" }}
       </button>
@@ -20,7 +20,7 @@
               hx-post="/api/auto-profile" hx-vals='{"profile":"power_latch"}'
               hx-target="#settings-controls" hx-swap="innerHTML"
               aria-pressed="{{if .AutoProfilePowerLatch}}true{{else}}false{{end}}"
-              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
+              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
                      {{if .AutoProfilePowerLatch}}border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500 dark:border-amber-500 dark:bg-amber-500/15 dark:text-amber-300{{else}}border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700{{end}}">
         {{ t .Lang "controls.profile_power_latch_btn" }}
       </button>
@@ -28,7 +28,7 @@
               hx-post="/api/auto-profile" hx-vals='{"profile":"surplus_latch"}'
               hx-target="#settings-controls" hx-swap="innerHTML"
               aria-pressed="{{if .AutoProfileSurplusLatch}}true{{else}}false{{end}}"
-              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
+              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
                      {{if .AutoProfileSurplusLatch}}border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500 dark:border-amber-500 dark:bg-amber-500/15 dark:text-amber-300{{else}}border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700{{end}}">
         {{ t .Lang "controls.profile_surplus_latch_btn" }}
       </button>

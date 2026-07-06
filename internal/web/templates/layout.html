@@ -15,6 +15,85 @@
   <meta name="apple-mobile-web-app-title" content="wha">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js" defer></script>
+  {{- /* Flash the hero once when the charging state actually changes — not on
+         every 5s poll. Pure enhancement: no JS still leaves a working UI. */ -}}
+  <script>
+    (function () {
+      var lastState = null;
+      document.addEventListener('DOMContentLoaded', function () {
+        var hero = document.getElementById('status-hero');
+        if (hero) lastState = hero.getAttribute('data-state');
+      });
+      document.addEventListener('htmx:afterSettle', function () {
+        var hero = document.getElementById('status-hero');
+        if (!hero) return;
+        var state = hero.getAttribute('data-state');
+        if (lastState !== null && state !== lastState) {
+          hero.classList.remove('status-flash');
+          void hero.offsetWidth; // reflow so the animation restarts
+          hero.classList.add('status-flash');
+        }
+        lastState = state;
+      });
+    })();
+  </script>
+  {{- /* Directional page transitions: on a tab change, tell the cross-document
+         View Transition which way to slide (by comparing the from/to tab index)
+         and how fast (a multi-tab jump animates quicker). No-op on browsers
+         without cross-document view transitions — navigation just stays instant. */ -}}
+  <script>
+    (function () {
+      var TAB_INDEX = { '/': 0, '/control': 1, '/settings': 2 };
+      function idx(u) { return TAB_INDEX[new URL(u).pathname]; }
+      function typeFor(fromU, toU) {
+        var a = idx(fromU), b = idx(toU);
+        if (a == null || b == null || a === b) return null; // lang/setup/etc: default cross-fade
+        return { type: b > a ? 'forwards' : 'backwards', dist: Math.abs(b - a) };
+      }
+      window.addEventListener('pageswap', function (e) {
+        if (!e.viewTransition || !e.activation) return;
+        var t = typeFor(e.activation.from.url, e.activation.entry.url);
+        if (t) e.viewTransition.types.add(t.type);
+      });
+      window.addEventListener('pagereveal', function (e) {
+        if (!e.viewTransition || !navigation.activation || !navigation.activation.from) return;
+        var t = typeFor(navigation.activation.from.url, navigation.activation.entry.url);
+        if (!t) return;
+        e.viewTransition.types.add(t.type);
+        document.documentElement.style.setProperty('--vt-duration', t.dist >= 2 ? '0.22s' : '0.3s');
+      });
+    })();
+  </script>
+  {{- /* Swipe left/right on a touch screen to move between adjacent tabs. Just
+         navigates to the neighbouring tab URL — the directional view transition
+         above then plays the matching slide. Passive listeners, so vertical
+         scrolling is never blocked; only a decisive horizontal flick navigates. */ -}}
+  <script>
+    (function () {
+      var TAB_ORDER = ['/', '/control', '/settings'];
+      var x0 = null, y0 = null, t0 = 0;
+      window.addEventListener('touchstart', function (e) {
+        if (e.touches.length !== 1) { x0 = null; return; }
+        x0 = e.touches[0].clientX;
+        y0 = e.touches[0].clientY;
+        t0 = e.timeStamp;
+      }, { passive: true });
+      window.addEventListener('touchend', function (e) {
+        if (x0 === null) return;
+        var i = TAB_ORDER.indexOf(location.pathname);
+        var dx = e.changedTouches[0].clientX - x0;
+        var dy = e.changedTouches[0].clientY - y0;
+        var dt = e.timeStamp - t0;
+        x0 = null;
+        if (i < 0) return;                                  // not on a tab page
+        if (Math.abs(dx) < 60 || Math.abs(dx) <= Math.abs(dy) * 1.5) return; // not a clear horizontal swipe
+        if (dt > 600) return;                               // too slow to be a flick
+        var next = dx < 0 ? i + 1 : i - 1;                  // swipe left → next tab, right → previous
+        if (next < 0 || next >= TAB_ORDER.length) return;   // clamp at the ends
+        location.href = TAB_ORDER[next];
+      }, { passive: true });
+    })();
+  </script>
   <script>
     if ('serviceWorker' in navigator && window.isSecureContext) {
       window.addEventListener('load', () => {
@@ -59,17 +138,17 @@
   <nav aria-label="Primary" class="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur dark:border-slate-800 dark:bg-slate-900/90">
     <div class="mx-auto grid max-w-screen-md grid-cols-3">
       <a href="/" aria-current="{{if eq .Active "status"}}page{{else}}false{{end}}"
-         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "status"}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
+         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "status"}}tab-active text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
         <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9.5 12 3l9 6.5"/><path d="M5 10v10a1 1 0 0 0 1 1h3v-6h6v6h3a1 1 0 0 0 1-1V10"/></svg>
         {{ t .Lang "nav.dashboard_link" }}
       </a>
       <a href="/control" aria-current="{{if eq .Active "control"}}page{{else}}false{{end}}"
-         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "control"}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
+         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "control"}}tab-active text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
         <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
         {{ t .Lang "nav.control_link" }}
       </a>
       <a href="/settings" aria-current="{{if eq .Active "settings"}}page{{else}}false{{end}}"
-         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "settings"}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
+         class="flex min-h-[56px] flex-col items-center justify-center gap-0.5 text-xs font-medium transition focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 {{if eq .Active "settings"}}tab-active text-emerald-600 dark:text-emerald-400{{else}}text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200{{end}}">
         <svg class="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
         {{ t .Lang "nav.settings_link" }}
       </a>

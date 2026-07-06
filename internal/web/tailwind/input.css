@@ -4,8 +4,144 @@
 
 /* Project base layer: small ergonomic defaults for the appliance UI. */
 @layer base {
-  /* Smooth the htmx swap so the 5s status poll doesn't visually flicker. */
+  /* Shared entrance: fade up a touch. Used for htmx-loaded lists and settle. */
+  @keyframes fade-in-up {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /* Staggered reveal for a container's direct children (e.g. session rows).
+     Used only on htmx-loaded lists, not on navigations — full-page tab
+     switches are animated as a unit by the view transitions below. */
+  .stagger-in > * {
+    animation: fade-in-up 0.28s ease-out both;
+  }
+  .stagger-in > *:nth-child(1) { animation-delay: 0ms; }
+  .stagger-in > *:nth-child(2) { animation-delay: 40ms; }
+  .stagger-in > *:nth-child(3) { animation-delay: 80ms; }
+  .stagger-in > *:nth-child(4) { animation-delay: 120ms; }
+  .stagger-in > *:nth-child(5) { animation-delay: 160ms; }
+  .stagger-in > *:nth-child(n + 6) { animation-delay: 200ms; }
+
+  /* Active bottom-tab indicator: a static underline bar. On navigation the
+     browser tweens it from the old tab to the new tab (view-transition-name
+     below), so it slides between tabs rather than redrawing. */
+  .tab-active {
+    position: relative;
+  }
+  .tab-active::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 25%;
+    right: 25%;
+    height: 2px;
+    border-radius: 9999px;
+    background-color: currentColor;
+    view-transition-name: tab-indicator;
+  }
+
+  /* Hero highlight when the charging state actually changes (toggled by JS). */
+  @keyframes status-flash {
+    0% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
+    30% { box-shadow: 0 0 0 4px rgb(16 185 129 / 0.35); }
+    100% { box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
+  }
+  .status-flash {
+    animation: status-flash 0.9s ease-out;
+  }
+
+  /* Smooth the htmx swap so the 5s status poll reads as a gentle breath rather
+     than a flat flicker: dim on swap-out, ease back to full on settle. */
   .htmx-swapping {
     opacity: 0.6;
+    transition: opacity 0.15s ease-out;
   }
+  .htmx-settling {
+    animation: fade-in-up 0.2s ease-out;
+  }
+
+  /* Respect the user's motion preference: collapse everything to instant. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+    ::view-transition-group(*),
+    ::view-transition-old(*),
+    ::view-transition-new(*) {
+      animation: none !important;
+    }
+  }
+}
+
+/* ===========================================================================
+   Cross-document (MPA) view transitions: directional page swipe on tab change
+   plus a tab indicator that slides from the old tab to the new one. Native
+   platform feature — browsers without support (e.g. Firefox today) just do a
+   plain instant navigation. The opt-in is gated on prefers-reduced-motion so
+   motion-sensitive users get an instant nav too. Direction ("forwards" /
+   "backwards") and pace (--vt-duration) are set per navigation by the
+   pageswap/pagereveal script in layout.html.
+   =========================================================================== */
+@media (prefers-reduced-motion: no-preference) {
+  @view-transition {
+    navigation: auto;
+  }
+}
+
+:root {
+  --vt-duration: 0.3s;
+}
+
+/* Pull the page content out of the root cross-fade so it can slide on its own. */
+main {
+  view-transition-name: page;
+}
+
+@keyframes vt-slide-out-left {
+  to { transform: translateX(-100%); }
+}
+@keyframes vt-slide-in-right {
+  from { transform: translateX(100%); }
+}
+@keyframes vt-slide-out-right {
+  to { transform: translateX(100%); }
+}
+@keyframes vt-slide-in-left {
+  from { transform: translateX(-100%); }
+}
+
+/* Base timing for the sliding page + the morphing tab indicator. Distance-aware
+   pace comes from --vt-duration (set shorter for multi-tab jumps). */
+::view-transition-old(page),
+::view-transition-new(page),
+::view-transition-group(tab-indicator) {
+  animation-duration: var(--vt-duration);
+  animation-timing-function: ease;
+}
+
+/* Forwards (toward a higher tab index / rightward): new content in from right. */
+:root:active-view-transition-type(forwards)::view-transition-old(page) {
+  animation-name: vt-slide-out-left;
+}
+:root:active-view-transition-type(forwards)::view-transition-new(page) {
+  animation-name: vt-slide-in-right;
+}
+
+/* Backwards (toward a lower tab index / leftward): new content in from left. */
+:root:active-view-transition-type(backwards)::view-transition-old(page) {
+  animation-name: vt-slide-out-right;
+}
+:root:active-view-transition-type(backwards)::view-transition-new(page) {
+  animation-name: vt-slide-in-left;
 }
