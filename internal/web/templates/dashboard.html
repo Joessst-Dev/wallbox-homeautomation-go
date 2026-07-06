@@ -6,7 +6,7 @@
   <div id="status"
        hx-get="/partials/status"
        hx-trigger="every 5s"
-       hx-swap="innerHTML"
+       hx-swap="innerHTML settle:200ms"
        hx-sync="this:replace">
     {{template "partials/status" .Status}}
   </div>
@@ -24,7 +24,7 @@
     <div id="detail"
          hx-get="/partials/detail"
          hx-trigger="every 5s"
-         hx-swap="innerHTML"
+         hx-swap="innerHTML settle:200ms"
          hx-sync="this:replace"
          class="border-t border-slate-100 p-4 dark:border-slate-800 sm:p-5">
       {{template "partials/detail" .Status}}
@@ -36,7 +36,7 @@
     <div class="mb-3 flex items-center justify-between">
       <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t .Sessions.Lang "session.recent_heading" }}</h2>
       <button type="button"
-              class="rounded-lg px-2 py-1 text-xs font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              class="rounded-lg px-2 py-1 text-xs font-medium text-slate-500 transition active:scale-[0.97] hover:bg-slate-100 hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
               hx-get="/partials/sessions"
               hx-target="#sessions"
               hx-swap="innerHTML"

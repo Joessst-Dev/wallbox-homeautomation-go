@@ -23,7 +23,8 @@
   {{- /* Compact hero: the essentials at a glance — state, surplus, vehicle SoC.
          The power-flow breakdown and health indicators live in the collapsible
          "Details" section below so this stays above the controls on a phone. */ -}}
-  <section class="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-900
+  <section id="status-hero" data-state="{{if .Charging}}charging{{else}}idle{{end}}"
+           class="overflow-hidden rounded-2xl border bg-white shadow-sm dark:bg-slate-900
                   {{if .Charging}}border-emerald-300 dark:border-emerald-500/40{{else}}border-slate-200 dark:border-slate-800{{end}}">
     <div class="h-1.5 w-full {{if .Charging}}bg-emerald-500{{else}}bg-slate-300 dark:bg-slate-700{{end}}"></div>
     <div class="p-4 sm:p-5">
@@ -70,7 +71,7 @@
 
       {{- /* Vehicle SoC progress toward the surplus cap. */ -}}
       <div class="relative mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" role="progressbar" aria-valuenow="{{.VehicleSoC}}" aria-valuemin="0" aria-valuemax="100" aria-label="Vehicle state of charge">
-        <div class="h-full rounded-full transition-[width] duration-500 {{if .Charging}}bg-emerald-500{{else}}bg-slate-400 dark:bg-slate-500{{end}}" style="width: {{.VehicleSoC}}%"></div>
+        <div class="h-full rounded-full transition-[width] duration-500 ease-out {{if .Charging}}bg-emerald-500{{else}}bg-slate-400 dark:bg-slate-500{{end}}" style="width: {{.VehicleSoC}}%"></div>
       </div>
       <div class="relative mt-1 h-4 text-[0.6875rem] text-slate-400 dark:text-slate-500">
         <span class="absolute left-0">0%</span>

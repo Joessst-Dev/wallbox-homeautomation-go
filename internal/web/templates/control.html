@@ -7,7 +7,7 @@
   <div id="control-status"
        hx-get="/partials/control-status"
        hx-trigger="every 5s"
-       hx-swap="innerHTML"
+       hx-swap="innerHTML settle:200ms"
        hx-sync="this:replace">
     {{template "partials/controlstatus" .Status}}
   </div>

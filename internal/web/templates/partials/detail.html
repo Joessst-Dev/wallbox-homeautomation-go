@@ -30,7 +30,7 @@
           <dd class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">{{.BatteryW}} W &middot; {{.BatterySoC}}%</dd>
         </div>
         <div class="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" role="progressbar" aria-valuenow="{{.BatterySoC}}" aria-valuemin="0" aria-valuemax="100" aria-label="Home battery state of charge">
-          <div class="h-full rounded-full bg-sky-500 transition-[width] duration-500" style="width: {{.BatterySoC}}%"></div>
+          <div class="h-full rounded-full bg-sky-500 transition-[width] duration-500 ease-out" style="width: {{.BatterySoC}}%"></div>
         </div>
       </div>
     </dl>
