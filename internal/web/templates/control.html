@@ -1,0 +1,44 @@
+<section class="space-y-4 sm:space-y-5">
+  <!--
+    Compact read-only status strip so the operator sees current state (charging,
+    surplus, vehicle SoC) while acting, without switching to the Status tab.
+    Polled every 5s like the full hero; read-only so no user input is discarded.
+  -->
+  <div id="control-status"
+       hx-get="/partials/control-status"
+       hx-trigger="every 5s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/controlstatus" .Status}}
+  </div>
+
+  <!--
+    Operator controls: the Auto/Now/Stop override plus the pv/now charge-power
+    choice. Polled slowly (60s) to pick up state changes from other sessions or
+    restarts; actions (form submit, charge-power click) also refresh this block
+    immediately via hx-target="#controls". The slow cadence means the 5s status
+    poll never resets the user's in-progress input.
+  -->
+  <div id="controls"
+       hx-get="/partials/controls"
+       hx-trigger="every 60s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/controls" .Status}}
+  </div>
+
+  <!--
+    Auto-charge configuration: profile selector plus the latch-only start
+    threshold / target-SoC forms. Polled slowly (60s) to pick up changes from
+    other sessions or restarts; the profile/threshold/target actions also
+    refresh this block immediately via hx-target="#settings-controls". The slow
+    cadence keeps a poll from resetting an in-progress input.
+  -->
+  <div id="settings-controls"
+       hx-get="/partials/settings"
+       hx-trigger="every 60s"
+       hx-swap="innerHTML"
+       hx-sync="this:replace">
+    {{template "partials/settings" .Status}}
+  </div>
+</section>

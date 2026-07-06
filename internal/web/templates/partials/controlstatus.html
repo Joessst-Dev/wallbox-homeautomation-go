@@ -1,0 +1,49 @@
+<div class="space-y-3">
+
+  {{- /* Warning banner: stale data or a lost upstream connection. Kept here so a
+         fail-safe condition is visible while acting, not just on the Status tab. */ -}}
+  {{if or .Stale (not .BrokerConnected) (not .Online)}}
+  <div role="alert"
+       class="flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm
+              {{if .Stale}}border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200
+              {{else}}border-rose-300 bg-rose-50 text-rose-900 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200{{end}}">
+    <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 9v4m0 4h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0Z" />
+    </svg>
+    <div>
+      <p class="font-semibold">
+        {{if .Stale}}{{ t .Lang "status.stale_title" }}{{else if not .BrokerConnected}}{{ t .Lang "status.broker_disconnected_title" }}{{else}}{{ t .Lang "status.evcc_offline_title" }}{{end}}
+      </p>
+      <p class="text-[0.8125rem] opacity-90">
+        {{if .Stale}}{{if .HasUpdated}}{{ t .Lang "status.stale_body_ago" .UpdatedAgo }}{{else}}{{ t .Lang "status.stale_body" }}{{end}}{{else}}{{ t .Lang "status.disconnected_body" }}{{end}}
+      </p>
+    </div>
+  </div>
+  {{end}}
+
+  {{- /* Compact status strip: state, surplus, and vehicle SoC in a single row so
+         the operator sees what they are acting on without leaving the Control tab.
+         Read-only; the full hero and power-flow detail live on the Status tab. */ -}}
+  <section class="flex items-center gap-3 overflow-hidden rounded-2xl border bg-white px-4 py-3 shadow-sm dark:bg-slate-900
+                  {{if .Charging}}border-emerald-300 dark:border-emerald-500/40{{else}}border-slate-200 dark:border-slate-800{{end}}">
+    <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl
+                 {{if .Charging}}bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-400{{else}}bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400{{end}}">
+      {{if .Charging}}
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" /></svg>
+      {{else}}
+      <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></svg>
+      {{end}}
+    </span>
+    <p class="min-w-0 flex-1 truncate text-sm font-semibold capitalize {{if .Charging}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-800 dark:text-slate-100{{end}}">
+      {{ t .Lang (printf "state.%s" .State) }}
+    </p>
+    <div class="shrink-0 text-right">
+      <p class="text-[0.6875rem] font-medium text-slate-500 dark:text-slate-400">{{ t .Lang "status.surplus_label" }}</p>
+      <p class="text-sm font-bold tabular-nums {{if gt .SurplusW 0}}text-emerald-600 dark:text-emerald-400{{else}}text-slate-700 dark:text-slate-200{{end}}">{{.SurplusW}}<span class="ml-0.5 text-xs font-semibold text-slate-400 dark:text-slate-500">W</span></p>
+    </div>
+    <div class="shrink-0 border-l border-slate-100 pl-3 text-right dark:border-slate-800">
+      <p class="text-[0.6875rem] font-medium text-slate-500 dark:text-slate-400">{{ t .Lang "status.vehicle_soc_label" }}</p>
+      <p class="text-sm font-bold tabular-nums text-slate-800 dark:text-slate-100">{{.VehicleSoC}}<span class="ml-0.5 text-xs font-semibold text-slate-400 dark:text-slate-500">%</span></p>
+    </div>
+  </section>
+</div>

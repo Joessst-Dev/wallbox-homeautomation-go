@@ -125,7 +125,10 @@
 
   "nav.setup_link": "Secure access & install as app",
   "nav.settings_link": "Settings",
-  "nav.dashboard_link": "Dashboard",
+  "nav.control_link": "Control",
+  "nav.dashboard_link": "Status",
+
+  "control.title": "Control — wha",
 
   "settings.title": "Settings — wha",
   "settings.profile_heading": "Auto-charge",
