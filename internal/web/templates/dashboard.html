@@ -26,24 +26,13 @@
     {{template "partials/controls" .Status}}
   </div>
 
-  <!--
-    Software update: shows the running version and (when the updater sidecar is
-    enabled) lets the operator check GHCR and apply a newer release. Polled
-    slowly so an in-flight update's progress surfaces without spamming the
-    handler; the check/apply actions target this same #update container.
-  -->
-  <div id="update"
-       hx-get="/partials/update"
-       hx-trigger="every 15s"
-       hx-swap="innerHTML"
-       hx-sync="this:replace">
-    {{template "partials/update" .Update}}
-  </div>
-
-  <!-- Secure access / install-as-app entry point -->
-  <a href="/setup"
+  <!-- Settings: auto-charge profile, software update, secure access -->
+  <a href="/settings"
      class="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
-    <span>{{ t .Lang "nav.setup_link" }}</span>
+    <span class="flex items-center gap-2">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
+      {{ t .Lang "nav.settings_link" }}
+    </span>
     <span aria-hidden="true">&rarr;</span>
   </a>
 

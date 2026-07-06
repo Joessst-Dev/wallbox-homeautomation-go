@@ -124,6 +124,11 @@
   "update.confirm_message": "Update wha to v%s now? The service will restart.",
 
   "nav.setup_link": "Secure access & install as app",
+  "nav.settings_link": "Settings",
+
+  "settings.title": "Settings — wha",
+  "settings.back_link": "Back to dashboard",
+  "settings.profile_heading": "Auto-charge",
 
   "setup.title": "Secure access — wha",
   "setup.secure_heading": "Secure access",

@@ -51,9 +51,35 @@ func (s *Server) handleDashboard(c *fiber.Ctx) error {
 		Lang:     lang,
 		Status:   statusView{StatusVM: status, Lang: lang},
 		Sessions: sessionsView{Lang: lang, Sessions: newSessionVMs(sessions)},
-		Update:   updateView{UpdateVM: newUpdateVM(s.now(), s.upd.Info(c.Context())), Lang: lang},
 	}
 	return c.Render("dashboard", vm, "layout")
+}
+
+// handleSettings renders the full settings page within the layout: the
+// auto-charge configuration and the software-update card.
+func (s *Server) handleSettings(c *fiber.Ctx) error {
+	lang := langFromCtx(c)
+	vm := settingsVM{
+		Title:  s.i18n.T(lang, "settings.title"),
+		Lang:   lang,
+		Status: statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: lang},
+		Update: updateView{UpdateVM: newUpdateVM(s.now(), s.upd.Info(c.Context())), Lang: lang},
+	}
+	return c.Render("settings", vm, "layout")
+}
+
+// handleSettingsPartial renders just the auto-charge configuration fragment
+// (slow poll / returned after profile, start-threshold, or target-SoC actions).
+func (s *Server) handleSettingsPartial(c *fiber.Ctx) error {
+	return s.renderSettingsPartial(c)
+}
+
+// renderSettingsPartial is shared by the poll endpoint and the auto-profile /
+// start-threshold / target-SoC handlers so an htmx action returns the
+// freshly-computed configuration.
+func (s *Server) renderSettingsPartial(c *fiber.Ctx) error {
+	vm := statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: langFromCtx(c)}
+	return c.Render("partials/settings", vm)
 }
 
 // handleStatusPartial renders just the live-status fragment (htmx poll target).
@@ -219,7 +245,7 @@ type autoProfileRequest struct {
 }
 
 // handleAutoProfile sets the persistent auto-charge profile (surplus|power_latch|
-// surplus_latch). For htmx requests it returns the refreshed controls partial;
+// surplus_latch). For htmx requests it returns the refreshed settings partial;
 // otherwise {"ok":true}.
 func (s *Server) handleAutoProfile(c *fiber.Ctx) error {
 	var req autoProfileRequest
@@ -238,7 +264,7 @@ func (s *Server) handleAutoProfile(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to set auto profile")
 	}
 	if c.Get("HX-Request") != "" {
-		return s.renderControlsPartial(c)
+		return s.renderSettingsPartial(c)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
@@ -250,7 +276,7 @@ type startThresholdRequest struct {
 
 // handleStartThreshold sets the persistent start-threshold override (watts,
 // 100 W steps) used by the active auto-charge profile's start trigger. For
-// htmx requests it returns the refreshed controls partial; otherwise
+// htmx requests it returns the refreshed settings partial; otherwise
 // {"ok":true}.
 func (s *Server) handleStartThreshold(c *fiber.Ctx) error {
 	var req startThresholdRequest
@@ -265,7 +291,7 @@ func (s *Server) handleStartThreshold(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to set start threshold")
 	}
 	if c.Get("HX-Request") != "" {
-		return s.renderControlsPartial(c)
+		return s.renderSettingsPartial(c)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }
@@ -277,7 +303,7 @@ type targetSoCRequest struct {
 
 // handleTargetSoC sets the persistent target-SoC override (10 % steps,
 // 50-100) used as the stop target by the active auto-charge profile. For htmx
-// requests it returns the refreshed controls partial; otherwise {"ok":true}.
+// requests it returns the refreshed settings partial; otherwise {"ok":true}.
 func (s *Server) handleTargetSoC(c *fiber.Ctx) error {
 	var req targetSoCRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -291,7 +317,7 @@ func (s *Server) handleTargetSoC(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusInternalServerError, "failed to set target soc")
 	}
 	if c.Get("HX-Request") != "" {
-		return s.renderControlsPartial(c)
+		return s.renderSettingsPartial(c)
 	}
 	return c.JSON(fiber.Map{"ok": true})
 }

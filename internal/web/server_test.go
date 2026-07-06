@@ -309,6 +309,40 @@ var _ = Describe("Web Server", func() {
 			Expect(body).To(ContainSubstring(`hx-get="/partials/status"`))
 			Expect(body).To(ContainSubstring(`hx-get="/partials/controls"`))
 			Expect(body).To(ContainSubstring(`id="controls"`))
+			// Config controls and the update card now live on /settings; the
+			// dashboard only links to it.
+			Expect(body).To(ContainSubstring(`href="/settings"`))
+			Expect(body).To(ContainSubstring("Settings"))
+			Expect(body).NotTo(ContainSubstring("Auto-charge profile"),
+				"auto-profile selector moved to /settings")
+			Expect(body).NotTo(ContainSubstring(`hx-get="/partials/update"`),
+				"update card moved to /settings")
+		})
+	})
+
+	Describe("GET /settings", func() {
+		It("renders the settings page with the auto-profile selector and update card", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/settings", nil)))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Auto-charge profile"))
+			Expect(body).To(ContainSubstring(`hx-get="/partials/settings"`))
+			Expect(body).To(ContainSubstring(`id="settings-controls"`))
+			Expect(body).To(ContainSubstring(`hx-get="/partials/update"`))
+			Expect(body).To(ContainSubstring(`href="/setup"`))
+		})
+	})
+
+	Describe("GET /partials/settings", func() {
+		It("renders the auto-charge configuration fragment without the layout", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/settings", nil)))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Auto-charge profile"))
+			Expect(body).To(ContainSubstring(`hx-post="/api/auto-profile"`))
+			Expect(body).To(ContainSubstring(`hx-target="#settings-controls"`))
 		})
 	})
 
@@ -335,6 +369,8 @@ var _ = Describe("Web Server", func() {
 			Expect(body).To(ContainSubstring("Charge power"))
 			Expect(body).To(ContainSubstring(`hx-post="/api/override"`))
 			Expect(body).To(ContainSubstring(`hx-target="#controls"`))
+			Expect(body).NotTo(ContainSubstring("Auto-charge profile"),
+				"auto-profile selector moved to the settings partial")
 		})
 
 		It("shows the cap-bypass target when a specific SoC is active", func() {
@@ -460,7 +496,7 @@ var _ = Describe("Web Server", func() {
 			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
 		})
 
-		It("returns the refreshed controls partial for htmx requests", func() {
+		It("returns the refreshed settings partial for htmx requests", func() {
 			req := enRequest(httptest.NewRequest(http.MethodPost, "/api/charge-power",
 				strings.NewReader("power=pv")))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -531,7 +567,7 @@ var _ = Describe("Web Server", func() {
 			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
 		})
 
-		It("returns the refreshed controls partial for htmx requests", func() {
+		It("returns the refreshed settings partial for htmx requests", func() {
 			req := enRequest(httptest.NewRequest(http.MethodPost, "/api/auto-profile",
 				strings.NewReader("profile=surplus_latch")))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -977,11 +1013,11 @@ var _ = Describe("Web Server", func() {
 			Expect(body).NotTo(ContainSubstring("&lt;code"))
 		})
 
-		It("localizes the dashboard's /setup link label", func() {
-			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/", nil)))
+		It("localizes the settings page's /setup link label", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/settings", nil)))
 			Expect(bodyString(resp)).To(ContainSubstring("Secure access &amp; install as app"))
 
-			deResp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/", nil))
+			deResp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/settings", nil))
 			Expect(bodyString(deResp)).To(ContainSubstring("Sicherer Zugriff &amp; App-Installation"))
 		})
 	})
