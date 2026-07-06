@@ -10,9 +10,14 @@
     <svg class="mt-0.5 h-5 w-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
       <path d="M12 9v4m0 4h.01M10.3 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.7 3.86a2 2 0 0 0-3.42 0Z" />
     </svg>
-    <p class="font-semibold">
-      {{if .Stale}}{{ t .Lang "status.stale_title" }}{{else if not .BrokerConnected}}{{ t .Lang "status.broker_disconnected_title" }}{{else}}{{ t .Lang "status.evcc_offline_title" }}{{end}}
-    </p>
+    <div>
+      <p class="font-semibold">
+        {{if .Stale}}{{ t .Lang "status.stale_title" }}{{else if not .BrokerConnected}}{{ t .Lang "status.broker_disconnected_title" }}{{else}}{{ t .Lang "status.evcc_offline_title" }}{{end}}
+      </p>
+      <p class="text-[0.8125rem] opacity-90">
+        {{if .Stale}}{{if .HasUpdated}}{{ t .Lang "status.stale_body_ago" .UpdatedAgo }}{{else}}{{ t .Lang "status.stale_body" }}{{end}}{{else}}{{ t .Lang "status.disconnected_body" }}{{end}}
+      </p>
+    </div>
   </div>
   {{end}}
 
