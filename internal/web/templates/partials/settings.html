@@ -12,7 +12,7 @@
               hx-post="/api/auto-profile" hx-vals='{"profile":"surplus"}'
               hx-target="#settings-controls" hx-swap="innerHTML"
               aria-pressed="{{if not .AutoProfileIsLatch}}true{{else}}false{{end}}"
-              class="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500
+              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500
                      {{if not .AutoProfileIsLatch}}border-emerald-500 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-500 dark:border-emerald-500 dark:bg-emerald-500/15 dark:text-emerald-300{{else}}border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700{{end}}">
         {{ t .Lang "controls.profile_surplus_btn" }}
       </button>
@@ -20,7 +20,7 @@
               hx-post="/api/auto-profile" hx-vals='{"profile":"power_latch"}'
               hx-target="#settings-controls" hx-swap="innerHTML"
               aria-pressed="{{if .AutoProfilePowerLatch}}true{{else}}false{{end}}"
-              class="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
+              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
                      {{if .AutoProfilePowerLatch}}border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500 dark:border-amber-500 dark:bg-amber-500/15 dark:text-amber-300{{else}}border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700{{end}}">
         {{ t .Lang "controls.profile_power_latch_btn" }}
       </button>
@@ -28,7 +28,7 @@
               hx-post="/api/auto-profile" hx-vals='{"profile":"surplus_latch"}'
               hx-target="#settings-controls" hx-swap="innerHTML"
               aria-pressed="{{if .AutoProfileSurplusLatch}}true{{else}}false{{end}}"
-              class="flex min-h-[40px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2 text-xs font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
+              class="flex min-h-[48px] items-center justify-center gap-1.5 rounded-xl border px-2 py-2.5 text-sm font-semibold transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-500
                      {{if .AutoProfileSurplusLatch}}border-amber-500 bg-amber-50 text-amber-700 ring-1 ring-amber-500 dark:border-amber-500 dark:bg-amber-500/15 dark:text-amber-300{{else}}border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700{{end}}">
         {{ t .Lang "controls.profile_surplus_latch_btn" }}
       </button>
@@ -46,35 +46,29 @@
     </details>
 
     {{if .AutoProfileIsLatch}}
-    <div class="mt-2 space-y-2 rounded-xl bg-slate-50 px-3 py-2.5 text-xs dark:bg-slate-800/60">
-      <form hx-post="/api/start-threshold" hx-target="#settings-controls" hx-swap="innerHTML"
-            class="flex items-center justify-between gap-3 text-slate-500 dark:text-slate-400">
+    {{- /* Latch tuning: the inputs auto-submit on change (no Set button) so a
+           value posts as soon as the operator edits it. */ -}}
+    <div class="mt-2 space-y-3 rounded-xl bg-slate-50 px-3 py-3 text-xs dark:bg-slate-800/60">
+      <label class="flex items-center justify-between gap-3 text-slate-500 dark:text-slate-400">
         <span>{{ t .Lang "controls.start_threshold_label" }}</span>
         <span class="flex items-center gap-1.5">
           <input type="number" name="startThresholdW" min="100" step="100" inputmode="numeric"
                  value="{{.StartThresholdW}}"
-                 class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                 hx-post="/api/start-threshold" hx-trigger="change" hx-target="#settings-controls" hx-swap="innerHTML"
+                 class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-2 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
           <span>W</span>
-          <button type="submit"
-                  class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
-            {{ t .Lang "controls.set_btn" }}
-          </button>
         </span>
-      </form>
-      <form hx-post="/api/target-soc" hx-target="#settings-controls" hx-swap="innerHTML"
-            class="flex items-center justify-between gap-3 text-slate-500 dark:text-slate-400">
+      </label>
+      <label class="flex items-center justify-between gap-3 text-slate-500 dark:text-slate-400">
         <span>{{ t .Lang "controls.target_soc_label" }}</span>
         <span class="flex items-center gap-1.5">
           <input type="number" name="targetSoC" min="50" max="100" step="10" inputmode="numeric"
                  value="{{.TargetSoC}}"
-                 class="w-16 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+                 hx-post="/api/target-soc" hx-trigger="change" hx-target="#settings-controls" hx-swap="innerHTML"
+                 class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-2 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
           <span>%</span>
-          <button type="submit"
-                  class="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
-            {{ t .Lang "controls.set_btn" }}
-          </button>
         </span>
-      </form>
+      </label>
     </div>
     {{end}}
   </div>

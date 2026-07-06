@@ -40,9 +40,9 @@
   "status.disconnected_body": "Messwerte können veraltet sein, bis die Verbindung wiederhergestellt ist.",
   "status.controller_label": "Steuerung",
   "status.desired_mode_label": "Ziel-Modus",
-  "status.updated_prefix": "Aktualisiert",
   "status.awaiting_first_update": "Warte auf erste Aktualisierung",
   "status.power_flow_heading": "Energiefluss",
+  "status.detail_summary": "Details",
   "status.surplus_label": "Überschuss",
   "status.surplus_available": "%s kW verfügbar",
   "status.pv_label": "PV",
@@ -82,7 +82,7 @@
   "controls.latch_compare_body": "Sowohl <strong>PV-Leistung (fest)</strong> als auch <strong>Überschuss (fest)</strong> sind „bis zum Ziel durchladen“-Modi: Einmal gestartet, laden sie mit voller Leistung weiter, auch wenn der Auslöser kurz absinkt, und stoppen erst am Ziel-Ladestand. Sie unterscheiden sich nur im Auslöser — <strong>PV-Leistung (fest)</strong> reagiert auf die gesamte PV-Erzeugung und kann dabei Strom aus dem Netz beziehen, während <strong>Überschuss (fest)</strong> nur auf echten Überschuss nach Abzug des Hausverbrauchs reagiert (Batterieentladung zählt nicht als Überschuss). Fail-Safes (veraltete Daten, Verbindungsabbruch, Übersteuerung, Ladegrenze) haben in beiden Modi stets Vorrang.",
   "controls.start_threshold_label": "Startschwelle",
   "controls.target_soc_label": "Laden bis",
-  "controls.set_btn": "Setzen",
+  "controls.advanced_summary": "Erweitert",
   "controls.auto_btn": "Automatisch",
   "controls.charge_now_btn": "Jetzt laden",
   "controls.stop_btn": "Stopp",
@@ -125,9 +125,9 @@
 
   "nav.setup_link": "Sicherer Zugriff & App-Installation",
   "nav.settings_link": "Einstellungen",
+  "nav.dashboard_link": "Übersicht",
 
   "settings.title": "Einstellungen — wha",
-  "settings.back_link": "Zurück zum Dashboard",
   "settings.profile_heading": "Automatisches Laden",
 
   "setup.title": "Sicherer Zugriff — wha",

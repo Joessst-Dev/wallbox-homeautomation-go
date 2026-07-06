@@ -1,7 +1,7 @@
 <section class="space-y-4 sm:space-y-5">
   <!--
-    Live status: hero, power flow, vehicle, health. Polled every 5s; read-only so
-    user input is never discarded by the poll.
+    Live status essentials: compact hero with state, surplus, and vehicle SoC.
+    Polled every 5s; read-only so user input is never discarded by the poll.
   -->
   <div id="status"
        hx-get="/partials/status"
@@ -12,8 +12,9 @@
   </div>
 
   <!--
-    Operator controls: charge-power toggle and override form. Polled slowly (60s)
-    to pick up state changes from other sessions or restarts; actions (form submit,
+    Operator controls sit directly under the hero so the Auto/Now/Stop override
+    is reachable without scrolling past the detail cards. Polled slowly (60s) to
+    pick up state changes from other sessions or restarts; actions (form submit,
     charge-power click) also refresh this block immediately via hx-target="#controls".
     The slow cadence means the 5s status poll never resets the user's in-progress
     input.
@@ -26,15 +27,25 @@
     {{template "partials/controls" .Status}}
   </div>
 
-  <!-- Settings: auto-charge profile, software update, secure access -->
-  <a href="/settings"
-     class="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800">
-    <span class="flex items-center gap-2">
-      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z"/><circle cx="12" cy="12" r="3"/></svg>
-      {{ t .Lang "nav.settings_link" }}
-    </span>
-    <span aria-hidden="true">&rarr;</span>
-  </a>
+  <!--
+    Secondary detail (power-flow breakdown + connection health), collapsed by
+    default to keep the default view tidy. The <details> wrapper is static so its
+    open/closed state survives the 5s poll; only the inner #detail data is swapped.
+  -->
+  <details class="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <summary class="flex min-h-[48px] cursor-pointer select-none list-none items-center justify-between px-4 py-3 text-sm font-semibold uppercase tracking-wide text-slate-500 transition hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 dark:text-slate-400 dark:hover:bg-slate-800 [&::-webkit-details-marker]:hidden">
+      {{ t .Lang "status.detail_summary" }}
+      <svg class="h-4 w-4 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </summary>
+    <div id="detail"
+         hx-get="/partials/detail"
+         hx-trigger="every 5s"
+         hx-swap="innerHTML"
+         hx-sync="this:replace"
+         class="border-t border-slate-100 p-4 dark:border-slate-800 sm:p-5">
+      {{template "partials/detail" .Status}}
+    </div>
+  </details>
 
   <!-- Recent sessions -->
   <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">

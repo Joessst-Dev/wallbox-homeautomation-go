@@ -255,6 +255,7 @@ func newSessionVMs(in []store.Session) []SessionVM {
 type dashboardVM struct {
 	Title    string
 	Lang     string
+	Active   string // active bottom-nav tab (consumed by the shared layout)
 	Status   statusView
 	Sessions sessionsView
 }
@@ -264,6 +265,7 @@ type dashboardVM struct {
 type settingsVM struct {
 	Title  string
 	Lang   string
+	Active string // active bottom-nav tab (consumed by the shared layout)
 	Status statusView
 	Update updateView
 }

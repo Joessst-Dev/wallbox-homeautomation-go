@@ -1,0 +1,59 @@
+{{- /* Secondary detail, rendered inside the collapsible "Details" shell on the
+       dashboard: the full power-flow breakdown and the connection health. Polled
+       live; the open/closed <details> state lives on the wrapper so a poll never
+       snaps it shut. */ -}}
+<div class="grid gap-5 sm:grid-cols-2">
+
+  {{- /* Power flow: the surplus headline lives in the hero; this is the breakdown. */ -}}
+  <section>
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t .Lang "status.power_flow_heading" }}</h2>
+    <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+      <div>
+        <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.pv_label" }}</dt>
+        <dd class="font-semibold tabular-nums">{{.PVKW}} <span class="text-xs font-normal text-slate-400">kW</span></dd>
+      </div>
+      <div>
+        <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.home_label" }}</dt>
+        <dd class="font-semibold tabular-nums">{{.HomeKW}} <span class="text-xs font-normal text-slate-400">kW</span></dd>
+      </div>
+      <div>
+        <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.grid_label" }}</dt>
+        <dd class="font-semibold tabular-nums">{{.GridW}} <span class="text-xs font-normal text-slate-400">W</span></dd>
+      </div>
+      <div>
+        <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.charge_label" }}</dt>
+        <dd class="font-semibold tabular-nums">{{.ChargeW}} <span class="text-xs font-normal text-slate-400">W</span></dd>
+      </div>
+      <div class="col-span-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div class="flex items-center justify-between">
+          <dt class="text-xs text-slate-500 dark:text-slate-400">{{ t .Lang "status.battery_label" }}</dt>
+          <dd class="text-xs font-medium tabular-nums text-slate-500 dark:text-slate-400">{{.BatteryW}} W &middot; {{.BatterySoC}}%</dd>
+        </div>
+        <div class="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700" role="progressbar" aria-valuenow="{{.BatterySoC}}" aria-valuemin="0" aria-valuemax="100" aria-label="Home battery state of charge">
+          <div class="h-full rounded-full bg-sky-500 transition-[width] duration-500" style="width: {{.BatterySoC}}%"></div>
+        </div>
+      </div>
+    </dl>
+  </section>
+
+  {{- /* Health: connection indicators. */ -}}
+  <section>
+    <h2 class="text-sm font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{{ t .Lang "status.health_heading" }}</h2>
+    <dl class="mt-3 grid grid-cols-2 gap-3">
+      <div class="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
+        <span class="h-2.5 w-2.5 shrink-0 rounded-full {{if .BrokerConnected}}bg-emerald-500{{else}}bg-rose-500{{end}}" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <dt class="text-sm font-medium">{{ t .Lang "status.mqtt_broker_label" }}</dt>
+          <dd class="text-xs {{if .BrokerConnected}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .BrokerConnected}}{{ t .Lang "status.connected" }}{{else}}{{ t .Lang "status.disconnected" }}{{end}}</dd>
+        </div>
+      </div>
+      <div class="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/60">
+        <span class="h-2.5 w-2.5 shrink-0 rounded-full {{if .Online}}bg-emerald-500{{else}}bg-rose-500{{end}}" aria-hidden="true"></span>
+        <div class="min-w-0">
+          <dt class="text-sm font-medium">{{ t .Lang "status.evcc_label" }}</dt>
+          <dd class="text-xs {{if .Online}}text-emerald-600 dark:text-emerald-400{{else}}text-rose-600 dark:text-rose-400{{end}}">{{if .Online}}{{ t .Lang "status.online_state" }}{{else}}{{ t .Lang "status.offline_state" }}{{end}}</dd>
+        </div>
+      </div>
+    </dl>
+  </section>
+</div>

@@ -16,6 +16,9 @@ type setupVM struct {
 	// (html lang attribute, header language toggle, footer) and by the
 	// template's own {{t}}/{{safeHTML}} lookups.
 	Lang string
+	// Active names the bottom-nav tab to highlight; /setup is reached from
+	// /settings, so it keeps the Settings tab active.
+	Active string
 	// HasCARoot is true when a CA root certificate is configured and present on
 	// disk, so the page can link to the download routes instead of explaining
 	// that no reverse proxy is deployed.
@@ -28,6 +31,7 @@ func (s *Server) handleSetup(c *fiber.Ctx) error {
 	vm := setupVM{
 		Title:     s.i18n.T(lang, "setup.title"),
 		Lang:      lang,
+		Active:    "settings",
 		HasCARoot: s.caRootAvailable(),
 	}
 	return c.Render("setup", vm, "layout")
