@@ -6,7 +6,7 @@
   <div id="status"
        hx-get="/partials/status"
        hx-trigger="every 5s"
-       hx-swap="innerHTML"
+       hx-swap="innerHTML settle:200ms"
        hx-sync="this:replace">
     {{template "partials/status" .Status}}
   </div>
@@ -24,7 +24,7 @@
     <div id="detail"
          hx-get="/partials/detail"
          hx-trigger="every 5s"
-         hx-swap="innerHTML"
+         hx-swap="innerHTML settle:200ms"
          hx-sync="this:replace"
          class="border-t border-slate-100 p-4 dark:border-slate-800 sm:p-5">
       {{template "partials/detail" .Status}}

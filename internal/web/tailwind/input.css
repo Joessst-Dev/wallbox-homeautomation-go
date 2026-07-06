@@ -58,13 +58,20 @@
   }
 
   /* Smooth the htmx swap so the 5s status poll reads as a gentle breath rather
-     than a flat flicker: dim on swap-out, ease back to full on settle. */
+     than a flat flicker: dim on swap-out, ease back to full on settle. The
+     polled status containers carry `settle:200ms` so this fade runs to
+     completion (htmx's default settle window is only 20ms). Opacity-only so a
+     recurring poll never nudges the layout vertically. */
+  @keyframes settle-fade {
+    from { opacity: 0.6; }
+    to { opacity: 1; }
+  }
   .htmx-swapping {
     opacity: 0.6;
     transition: opacity 0.15s ease-out;
   }
   .htmx-settling {
-    animation: fade-in-up 0.2s ease-out;
+    animation: settle-fade 0.2s ease-out;
   }
 
   /* Respect the user's motion preference: collapse everything to instant. */

@@ -44,20 +44,28 @@
   <script>
     (function () {
       var TAB_INDEX = { '/': 0, '/control': 1, '/settings': 2 };
-      function idx(u) { return TAB_INDEX[new URL(u).pathname]; }
-      function typeFor(fromU, toU) {
-        var a = idx(fromU), b = idx(toU);
-        if (a == null || b == null || a === b) return null; // lang/setup/etc: default cross-fade
+      function typeFor(fromPath, toPath) {
+        var a = TAB_INDEX[fromPath], b = TAB_INDEX[toPath];
+        if (a == null || b == null || a === b) return null; // lang/setup/reload: default cross-fade
         return { type: b > a ? 'forwards' : 'backwards', dist: Math.abs(b - a) };
       }
+      // Pass the outgoing path across the navigation via sessionStorage rather
+      // than the Navigation API (window.navigation is Chromium-only; Safari
+      // supports the view transition but not that API), so direction works in
+      // both and neither handler can throw on a missing activation.
       window.addEventListener('pageswap', function (e) {
-        if (!e.viewTransition || !e.activation) return;
-        var t = typeFor(e.activation.from.url, e.activation.entry.url);
-        if (t) e.viewTransition.types.add(t.type);
+        if (!e.viewTransition) return;
+        try { sessionStorage.setItem('vt-from', location.pathname); } catch (_) {}
       });
       window.addEventListener('pagereveal', function (e) {
-        if (!e.viewTransition || !navigation.activation || !navigation.activation.from) return;
-        var t = typeFor(navigation.activation.from.url, navigation.activation.entry.url);
+        if (!e.viewTransition) return;
+        var from;
+        try {
+          from = sessionStorage.getItem('vt-from');
+          sessionStorage.removeItem('vt-from');
+        } catch (_) {}
+        if (!from) return; // fresh load (typed URL, bookmark, PWA relaunch): nothing to slide from
+        var t = typeFor(from, location.pathname);
         if (!t) return;
         e.viewTransition.types.add(t.type);
         document.documentElement.style.setProperty('--vt-duration', t.dist >= 2 ? '0.22s' : '0.3s');
