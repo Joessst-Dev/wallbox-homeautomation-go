@@ -496,7 +496,7 @@ var _ = Describe("Web Server", func() {
 			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
 		})
 
-		It("returns the refreshed settings partial for htmx requests", func() {
+		It("returns the refreshed controls partial for htmx requests", func() {
 			req := enRequest(httptest.NewRequest(http.MethodPost, "/api/charge-power",
 				strings.NewReader("power=pv")))
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
