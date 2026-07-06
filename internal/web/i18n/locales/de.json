@@ -40,7 +40,6 @@
   "status.disconnected_body": "Messwerte können veraltet sein, bis die Verbindung wiederhergestellt ist.",
   "status.controller_label": "Steuerung",
   "status.desired_mode_label": "Ziel-Modus",
-  "status.updated_prefix": "Aktualisiert",
   "status.awaiting_first_update": "Warte auf erste Aktualisierung",
   "status.power_flow_heading": "Energiefluss",
   "status.detail_summary": "Details",

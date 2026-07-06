@@ -68,8 +68,13 @@
     {{- /* Advanced: cap bypass (only meaningful with "Charge now") and the
            auto-revert timer. Collapsed by default to keep the common case — the
            Auto/Now/Stop buttons — uncluttered. Both are parameters of the
-           override action and submit together when a mode button is pressed. */ -}}
-    <details class="group rounded-xl bg-slate-50 text-xs dark:bg-slate-800/60">
+           override action and submit together when a mode button is pressed.
+
+           hx-preserve keeps this element across the #controls swaps (the 60s
+           poll and every mode-button submit), so an opened panel — and the
+           operator's in-progress cap-bypass/target edits — is never snapped
+           shut mid-interaction. */ -}}
+    <details id="controls-advanced" hx-preserve="true" class="group rounded-xl bg-slate-50 text-xs dark:bg-slate-800/60">
       <summary class="flex min-h-[44px] cursor-pointer select-none list-none items-center justify-between px-3 font-medium text-slate-500 transition hover:text-slate-700 focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-emerald-500 dark:text-slate-400 dark:hover:text-slate-200 [&::-webkit-details-marker]:hidden">
         {{ t .Lang "controls.advanced_summary" }}
         <svg class="h-4 w-4 transition-transform group-open:rotate-180" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>

@@ -40,7 +40,6 @@
   "status.disconnected_body": "Readings may be out of date until the connection is restored.",
   "status.controller_label": "Controller",
   "status.desired_mode_label": "Desired mode",
-  "status.updated_prefix": "Updated",
   "status.awaiting_first_update": "Awaiting first update",
   "status.power_flow_heading": "Power flow",
   "status.detail_summary": "Details",
