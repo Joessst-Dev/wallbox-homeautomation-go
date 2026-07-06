@@ -12,22 +12,6 @@
   </div>
 
   <!--
-    Operator controls sit directly under the hero so the Auto/Now/Stop override
-    is reachable without scrolling past the detail cards. Polled slowly (60s) to
-    pick up state changes from other sessions or restarts; actions (form submit,
-    charge-power click) also refresh this block immediately via hx-target="#controls".
-    The slow cadence means the 5s status poll never resets the user's in-progress
-    input.
-  -->
-  <div id="controls"
-       hx-get="/partials/controls"
-       hx-trigger="every 60s"
-       hx-swap="innerHTML"
-       hx-sync="this:replace">
-    {{template "partials/controls" .Status}}
-  </div>
-
-  <!--
     Secondary detail (power-flow breakdown + connection health), collapsed by
     default to keep the default view tidy. The <details> wrapper is static so its
     open/closed state survives the 5s poll; only the inner #detail data is swapped.

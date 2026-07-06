@@ -125,7 +125,10 @@
 
   "nav.setup_link": "Sicherer Zugriff & App-Installation",
   "nav.settings_link": "Einstellungen",
-  "nav.dashboard_link": "Übersicht",
+  "nav.control_link": "Steuerung",
+  "nav.dashboard_link": "Status",
+
+  "control.title": "Steuerung — wha",
 
   "settings.title": "Einstellungen — wha",
   "settings.profile_heading": "Automatisches Laden",

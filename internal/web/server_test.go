@@ -298,39 +298,69 @@ var _ = Describe("Web Server", func() {
 	})
 
 	Describe("GET /", func() {
-		It("renders the dashboard HTML with key labels", func() {
+		It("renders the read-only status dashboard with key labels", func() {
 			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/", nil)))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).To(ContainSubstring("<!DOCTYPE html>"))
 			Expect(body).To(ContainSubstring("Surplus"))
 			Expect(body).To(ContainSubstring("Vehicle SoC"))
-			Expect(body).To(ContainSubstring("Override"))
 			Expect(body).To(ContainSubstring(`hx-get="/partials/status"`))
-			Expect(body).To(ContainSubstring(`hx-get="/partials/controls"`))
-			Expect(body).To(ContainSubstring(`id="controls"`))
-			// Config controls and the update card now live on /settings; the
-			// dashboard only links to it.
+			// The status dashboard links to the Control and Settings tabs.
+			Expect(body).To(ContainSubstring(`href="/control"`))
 			Expect(body).To(ContainSubstring(`href="/settings"`))
-			Expect(body).To(ContainSubstring("Settings"))
+			// Operator controls moved to the Control tab; the dashboard is read-only.
+			Expect(body).NotTo(ContainSubstring(`hx-post="/api/override"`),
+				"override controls moved to /control")
 			Expect(body).NotTo(ContainSubstring("Auto-charge profile"),
-				"auto-profile selector moved to /settings")
+				"auto-profile selector moved to /control")
 			Expect(body).NotTo(ContainSubstring(`hx-get="/partials/update"`),
-				"update card moved to /settings")
+				"update card lives on /settings")
+		})
+	})
+
+	Describe("GET /control", func() {
+		It("renders the control page with the status strip and operator controls", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/control", nil)))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).To(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring(`hx-get="/partials/control-status"`))
+			Expect(body).To(ContainSubstring(`id="controls"`))
+			Expect(body).To(ContainSubstring(`hx-get="/partials/controls"`))
+			Expect(body).To(ContainSubstring(`id="settings-controls"`))
+			Expect(body).To(ContainSubstring(`hx-get="/partials/settings"`))
+			Expect(body).To(ContainSubstring("Auto-charge profile"))
+			Expect(body).To(ContainSubstring("Override"))
+		})
+	})
+
+	Describe("GET /partials/control-status", func() {
+		It("renders the compact status strip without the layout or controls", func() {
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/control-status", nil)))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Surplus"))
+			Expect(body).To(ContainSubstring("Vehicle SoC"))
+			Expect(body).NotTo(ContainSubstring(`hx-post="/api/override"`),
+				"the override form belongs in controls, not the status strip")
 		})
 	})
 
 	Describe("GET /settings", func() {
-		It("renders the settings page with the auto-profile selector and update card", func() {
+		It("renders the settings page with the update card and secure-access link", func() {
 			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/settings", nil)))
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 			body := bodyString(resp)
 			Expect(body).To(ContainSubstring("<!DOCTYPE html>"))
-			Expect(body).To(ContainSubstring("Auto-charge profile"))
-			Expect(body).To(ContainSubstring(`hx-get="/partials/settings"`))
-			Expect(body).To(ContainSubstring(`id="settings-controls"`))
 			Expect(body).To(ContainSubstring(`hx-get="/partials/update"`))
 			Expect(body).To(ContainSubstring(`href="/setup"`))
+			// The auto-profile selector moved to the Control tab.
+			Expect(body).NotTo(ContainSubstring(`hx-get="/partials/settings"`),
+				"auto-profile selector moved to /control")
+			Expect(body).NotTo(ContainSubstring(`id="settings-controls"`),
+				"auto-profile selector moved to /control")
 		})
 	})
 

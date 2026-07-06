@@ -260,13 +260,22 @@ type dashboardVM struct {
 	Sessions sessionsView
 }
 
-// settingsVM is the /settings page model: the auto-charge configuration
-// (rendered from Status via partials/settings) and the software-update card.
-type settingsVM struct {
+// controlVM is the /control page model: the compact status strip plus the
+// override and auto-charge controls (rendered from Status via
+// partials/controlstatus, partials/controls, and partials/settings).
+type controlVM struct {
 	Title  string
 	Lang   string
 	Active string // active bottom-nav tab (consumed by the shared layout)
 	Status statusView
+}
+
+// settingsVM is the /settings page model: the software-update card and the
+// secure-access link. (The auto-charge configuration moved to /control.)
+type settingsVM struct {
+	Title  string
+	Lang   string
+	Active string // active bottom-nav tab (consumed by the shared layout)
 	Update updateView
 }
 

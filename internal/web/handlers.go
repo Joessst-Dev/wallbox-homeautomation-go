@@ -49,22 +49,46 @@ func (s *Server) handleDashboard(c *fiber.Ctx) error {
 	vm := dashboardVM{
 		Title:    s.i18n.T(lang, "dashboard.title"),
 		Lang:     lang,
-		Active:   "home",
+		Active:   "status",
 		Status:   statusView{StatusVM: status, Lang: lang},
 		Sessions: sessionsView{Lang: lang, Sessions: newSessionVMs(sessions)},
 	}
 	return c.Render("dashboard", vm, "layout")
 }
 
+// handleControl renders the full control page within the layout: a compact
+// read-only status strip followed by the override and auto-charge controls.
+func (s *Server) handleControl(c *fiber.Ctx) error {
+	lang := langFromCtx(c)
+	vm := controlVM{
+		Title:  s.i18n.T(lang, "control.title"),
+		Lang:   lang,
+		Active: "control",
+		Status: statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: lang},
+	}
+	return c.Render("control", vm, "layout")
+}
+
+// handleControlStatusPartial renders the compact status strip shown above the
+// control-page actions (htmx poll target).
+func (s *Server) handleControlStatusPartial(c *fiber.Ctx) error {
+	return s.renderControlStatusPartial(c)
+}
+
+// renderControlStatusPartial renders the compact read-only status strip.
+func (s *Server) renderControlStatusPartial(c *fiber.Ctx) error {
+	vm := statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: langFromCtx(c)}
+	return c.Render("partials/controlstatus", vm)
+}
+
 // handleSettings renders the full settings page within the layout: the
-// auto-charge configuration and the software-update card.
+// software-update card and the secure-access link.
 func (s *Server) handleSettings(c *fiber.Ctx) error {
 	lang := langFromCtx(c)
 	vm := settingsVM{
 		Title:  s.i18n.T(lang, "settings.title"),
 		Lang:   lang,
 		Active: "settings",
-		Status: statusView{StatusVM: newStatusVM(s.now(), s.ctrl.Status()), Lang: lang},
 		Update: updateView{UpdateVM: newUpdateVM(s.now(), s.upd.Info(c.Context())), Lang: lang},
 	}
 	return c.Render("settings", vm, "layout")

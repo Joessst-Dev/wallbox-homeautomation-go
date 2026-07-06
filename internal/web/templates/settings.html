@@ -1,20 +1,5 @@
 <section class="space-y-4 sm:space-y-5">
   <!--
-    Auto-charge configuration: profile selector plus the latch-only start
-    threshold / target-SoC forms. Polled slowly (60s) to pick up changes from
-    other sessions or restarts; the profile/threshold/target actions also
-    refresh this block immediately via hx-target="#settings-controls". The slow
-    cadence keeps a poll from resetting an in-progress input.
-  -->
-  <div id="settings-controls"
-       hx-get="/partials/settings"
-       hx-trigger="every 60s"
-       hx-swap="innerHTML"
-       hx-sync="this:replace">
-    {{template "partials/settings" .Status}}
-  </div>
-
-  <!--
     Software update: shows the running version and (when the updater sidecar is
     enabled) lets the operator check GHCR and apply a newer release. Polled
     slowly so an in-flight update's progress surfaces without spamming the
