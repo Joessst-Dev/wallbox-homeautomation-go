@@ -69,5 +69,14 @@ Caddy generates a *new* CA on next start and every previously trusted device
 shows a certificate warning again until it re-trusts the new root.
 :::
 
+## Reverse proxy and Host headers
+
+The dashboard's write endpoints reject cross-site requests: a browser request whose
+`Origin` host doesn't match `Host` (or the first `X-Forwarded-Host`) gets `403`
+(see [API → Cross-site write protection](/reference/api#cross-site-write-protection)).
+The bundled Caddy passes `Host` through unchanged, so nothing needs configuring. If you
+put your own proxy in front of wha, it must also forward the original `Host` (or set
+`X-Forwarded-Host`); otherwise dashboard buttons fail with 403.
+
 For a manual (non-`install.sh`) setup, set `WHA_SITE_ADDRESS` yourself (an
 `.env` file next to `docker-compose.yml` works) before `docker compose up -d`.

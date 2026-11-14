@@ -31,7 +31,7 @@ The **Power flow** card shows the current energy picture:
 
 The **Vehicle** card shows:
 
-- Vehicle state of charge (%) as a large number and a progress bar. The progress bar has a marker at the 80% cap.
+- Vehicle state of charge (%) as a large number and a progress bar. The progress bar has a marker at the 80% cap. The value is evcc's **estimate**; while charging, if it has not changed for more than 5 minutes, it is labelled *estimated by evcc*.
 - **Connected** / **Unplugged** status.
 - **Charging** / **Idle** status.
 - **Ready** badge when the loadpoint is enabled and a vehicle is connected.
@@ -44,6 +44,8 @@ The **Health** card shows the connection status of:
 - **evcc** — whether evcc is reporting as online (via MQTT Last Will and Testament).
 
 Both must be green for normal operation. An alert banner appears at the top of the status section if data is stale or a connection is lost.
+
+A separate banner appears when the charger is **enabled but not charging** for `control.stallTimeout` (default 3 minutes). `wha` attempts one off/resume recovery per plug-in session and otherwise just flags it — see [Troubleshooting](/reference/troubleshooting#wha-says-charging-but-the-wallbox-is-idle-stalled).
 
 ## Overrides
 
@@ -70,13 +72,13 @@ control strategy used whenever no manual override is active:
 
 | Profile | Behavior |
 |---------|----------|
-| **Surplus** (`surplus`) | Default hysteresis behavior: starts and stops on sustained PV surplus (see [How It Works](/guide/how-it-works)). |
+| **Surplus** (`surplus`) | Default hysteresis behavior: starts and stops on sustained PV surplus (see [How It Works](/guide/how-it-works)). The settings card shows *Starts charging at N W surplus — the car needs at least M W.* (N is the effective start threshold, M the minimum charge power). |
 | **PV power** (`power_latch`) | Once PV production reaches its **Start threshold**, charging starts and continues **to completion** — it does not stop again if production later drops. |
 | **Surplus (latch)** (`surplus_latch`) | Same as above, but the trigger is the calculated **surplus** (PV minus home/battery use) instead of raw PV production. |
 
 Selecting **PV power** or **Surplus (latch)** reveals two extra inputs:
 
-- **Start threshold** — the trigger level (W, 100 W steps) that arms charging for that profile.
+- **Start threshold** — the trigger level (W, 100 W steps) that arms charging for that profile. The input always shows what you entered; for **Surplus (latch)** the effective value, raised to evcc's minimum charge power if you chose less, is shown as a hint next to it. **PV power** is not floored.
 - **Charge to** — the target vehicle SoC (%, 10% steps, 50–100) at which charging stops.
 
 ::: tip Per-profile, persistent
@@ -107,6 +109,10 @@ This setting is **persistent**: it survives restarts and updates. It applies to 
 ::: warning Grid import
 **Full power** mode will import from the grid if PV generation is insufficient. Use it deliberately when you need to charge regardless of solar conditions.
 :::
+
+## Max charge current
+
+The **Max charge current** setting limits the current evcc may use (A). `wha` publishes it as `loadpoints/<id>/maxCurrent/set`, clamped to `control.maxCurrentCeilingA` (your circuit/charger rating), and re-asserts it on reconnect and on the republish cadence. It is persistent. Use it when **Charge now** exceeds a limit you set in the Easee app: in `now` mode evcc overrides temporary app limits with its own max current (16 A default). evcc silently rejects values below the loadpoint's `minCurrent`; the dashboard accepts values from `control.minCurrentA` up to `control.maxCurrentCeilingA`. Clearing the field (or entering `0`) removes the limit by setting it to `control.maxCurrentCeilingA`, which `wha` keeps publishing from then on. If `wha` never set a limit, clearing does nothing. Because clearing sets evcc's `maxCurrent` to the ceiling — which may differ from what evcc had before `wha` first touched it — set the ceiling to your circuit/charger rating.
 
 ## Charge past the cap
 

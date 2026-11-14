@@ -22,6 +22,10 @@ das Dashboard über dein Heimnetzwerk hinaus zugänglich machst.
   als JSON. Validierungsfehler liefern in beiden Fällen `400` mit einer
   Klartext-Fehlermeldung.
 
+## Schutz vor Cross-Site-Schreibzugriffen
+
+Alle schreibenden Anfragen unter `/api/*` (`POST`, `PUT`, `PATCH`, `DELETE`) werden mit `403` und einem JSON-Body abgelehnt – `{"ok":false,"error":"cross-site request rejected"}` bzw. `{"ok":false,"error":"cross-origin request rejected"}` –, wenn `Sec-Fetch-Site` den Wert `cross-site` hat oder der Host des `Origin`-Headers nicht zu `Host` (oder dem ersten `X-Forwarded-Host`) passt. `Origin: null` wird abgelehnt. Clients ohne `Origin`-Header (`curl`, Skripte) sind nicht betroffen, ebenso `GET`-Anfragen. Hinter einem Reverse-Proxy muss `Host` (oder `X-Forwarded-Host`) unverändert bei `wha` ankommen – siehe [Sicherer Zugriff](/de/guide/secure-access#reverse-proxy-und-host-header).
+
 ## Probes
 
 ### `GET /healthz`
@@ -64,6 +68,21 @@ Bedienelemente des Dashboards speisen. Wichtige Felder:
 | `charging` / `connected` / `ready` / `stale` | bool | Flags für Loadpoint/Fahrzeug/Datenaktualität |
 | `online` / `brokerConnected` | bool | Health-Flags für evcc-online (LWT) und MQTT-Broker-Verbindung |
 | `updatedAt` / `updatedAgo` / `hasUpdated` | string / string / bool | Wann `wha` zuletzt frische Daten von evcc erhalten hat |
+| `maxCurrentA` | number | Der maximale Ladestrom (A), den `wha` aktuell durchsetzt; `0`, wenn `wha` nie ein Limit gesetzt hat, nach dem Aufheben gleich der Obergrenze |
+| `maxCurrentLimited` | bool | `true` nur, wenn `0 < maxCurrentA < maxCurrentCeilingA`; `false`, wenn kein Limit gesetzt ist oder nach dem Aufheben (das Limit entspricht dann der Obergrenze) |
+| `minCurrentA` | number | Minimaler Ladestrom für die Start-Untergrenze (evcc `effectiveMinCurrent`, sonst `control.minCurrentA`); zugleich der niedrigste von `/api/max-current` akzeptierte Wert |
+| `maxCurrentCeilingA` | number | `control.maxCurrentCeilingA` – der höchste Strom, den `wha` sendet |
+| `evccMaxCurrentA` | number | Das `maxCurrent`, das evcc selbst meldet |
+| `stalled` / `stalledSince` / `stalledAgo` | bool / string / string | Wallbox aktiviert, lädt aber seit `control.stallTimeout` nicht; seit wann und wie lange |
+| `stallRecoveryActive` | bool | `true`, solange die einmalige Aus/Fortsetzen-Wiederherstellung läuft |
+| `chargerStatusReason` | string | evccs `chargerStatusReason`, sofern veröffentlicht |
+| `vehicleSoCChangedAt` / `vehicleSoCChangedAgo` | string / string | Wann sich der Fahrzeug-SoC zuletzt geändert hat |
+| `vehicleSoCEstimated` | bool | `true`, solange geladen wird und sich der SoC länger als 5 Minuten nicht geändert hat (angezeigt als *von evcc geschätzt*) |
+| `configuredStartThresholdW` | int | Der Startschwellenwert wie konfiguriert/eingegeben, vor der Anhebung |
+| `minChargePowerW` | int | Die berechnete Start-Untergrenze: Mindeststrom × 230 V × Phasen + `control.startMarginW` |
+| `startThresholdFloored` | bool | `true`, wenn der effektive Startschwellenwert auf `minChargePowerW` angehoben wurde (nur `surplus` und `surplus_latch`; `power_latch` wird nie angehoben) |
+
+Vergleiche `configuredStartThresholdW` mit `minChargePowerW` (oder prüfe `startThresholdFloored`), um zu sehen, ob angehoben wurde.
 
 ## Übersteuerungen und Lade-Bedienelemente
 
@@ -86,6 +105,31 @@ aktiviert ist (automatisch oder „Jetzt laden").
 | Feld | Typ | Werte |
 |-------|------|--------|
 | `power` | string | `pv` \| `now` |
+
+### `POST /api/max-current`
+
+Setzt den dauerhaften **maximalen Ladestrom** (A). `wha` veröffentlicht ihn als
+`loadpoints/<id>/maxCurrent/set` an evcc. Der Wert wird in der Tabelle
+`settings` gespeichert, beim ersten Start, bei Änderung, bei Broker-Reconnect
+und im `control.republish`-Takt veröffentlicht und immer auf
+`control.maxCurrentCeilingA` begrenzt.
+
+| Feld | Typ | Werte |
+|-------|------|--------|
+| `amps` | number | **Pflicht.** `control.minCurrentA` – `control.maxCurrentCeilingA`; `0` oder ein vorhandenes, aber leeres Feld **hebt** das Limit **auf** |
+
+Formularfeld `amps` oder JSON `{"amps": 8}`. Eine Anfrage ohne den Schlüssel `amps` liefert `400` (`amps is required (0 or empty clears the limit)`).
+
+- **Aufheben** (`amps=0` oder vorhanden, aber leer): Das Limit wird auf `control.maxCurrentCeilingA` gesetzt und gespeichert, und `wha` veröffentlicht diesen Wert ab dann weiter (erster Takt nach einem Neustart, bei Änderung, bei Reconnect, bei der Online-Flanke von evcc und im Republish-Takt). `/api/status` zeigt dann `maxCurrentA` gleich der Obergrenze und `maxCurrentLimited: false`. Hat `wha` nie ein Limit gesetzt, passiert beim Aufheben nichts und `maxCurrentA` bleibt `0`.
+- Aufheben setzt evccs `maxCurrent` also auf die Obergrenze, die sich von dem unterscheiden kann, was evcc hatte, bevor `wha` es erstmals berührte – setze `control.maxCurrentCeilingA` auf den Nennstrom deines Stromkreises/deiner Wallbox.
+- Senkst du `control.maxCurrentCeilingA` später, wird ein gespeichertes Limit oberhalb der neuen Obergrenze beim Start darauf begrenzt (eine Warnung wird protokolliert) und erneut veröffentlicht; ein gespeichertes Limit unter `control.minCurrentA` wird nach oben begrenzt.
+- `400` bei nicht numerischem oder außerhalb des Bereichs liegendem Wert (unter `control.minCurrentA` oder über `control.maxCurrentCeilingA`); `500`, wenn das Speichern der Einstellung fehlschlägt.
+
+```sh
+curl -X POST -d amps=8 http://<dein-pi>:8080/api/max-current
+curl -X POST -H 'Content-Type: application/json' -d '{"amps":8}' http://<dein-pi>:8080/api/max-current
+curl -X POST -d amps=0 http://<dein-pi>:8080/api/max-current   # aufheben
+```
 
 ### `POST /api/auto-profile`
 
@@ -132,6 +176,10 @@ Liefert die letzten Ladesitzungen als JSON. Query-Parameter: `limit` (Standard 2
 
 Liefert die letzten Controller-/Kommando-Audit-Ereignisse als JSON. Query-Parameter:
 `limit` (Standard 50).
+
+Stillstands- und Maximalstrom-Ereignisse: `stalled` (erkannt/aufgehoben),
+`stall_recovery` (`off`/`resume`), `max_current:N`, `max_current:clear` und
+`set_max_current:N`.
 
 ### `GET /api/history`
 

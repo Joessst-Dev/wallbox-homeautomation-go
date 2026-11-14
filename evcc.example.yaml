@@ -4,9 +4,18 @@
 #
 # Two things here are wha-specific:
 #   1. the `mqtt:` block — so evcc publishes state to Mosquitto for wha to read.
-#   2. permissive loadpoint enable/disable thresholds — wha owns the surplus
-#      decision (its own threshold + dwell), so evcc should not add a second
-#      layer of hysteresis. Keep its disable delay (~3m) for contactor safety.
+#   2. loadpoint enable/disable delays — evcc keeps its OWN surplus gate: it
+#      only enables once export reaches the loadpoint's minimum charge power
+#      (minCurrent x voltage x phases), and its enable/disable delays run IN
+#      PARALLEL with wha's start/stop dwells. wha floors its startThresholdW
+#      at that same minimum (control.minCurrentA / phases / startMarginW), so
+#      the two gates agree. Keep a disable delay (~3m) for contactor safety.
+
+# The Easee driver is sponsor-gated: without a valid token evcc aborts at startup
+# with "sponsorship required". Get one at https://sponsor.evcc.io (GitHub Sponsors)
+# or grab the time-limited trial token from https://docs.evcc.io/en/sponsorship.
+# Treat it as a secret — do not commit your real token.
+sponsortoken: CHANGE_ME
 
 # Publish/subscribe to the shared broker. wha connects to the same broker.
 mqtt:
@@ -28,15 +37,44 @@ loadpoints:
   - title: Garage
     charger: easee_home
     vehicle: twingo
-    phases: 3 # Easee Home is 3-phase; set to 1 if wired single-phase
+    # Phase choice (the Easee Home itself is 3-phase capable):
+    #   3 = fixed three-phase (example default). Predictable, but the minimum
+    #       charge power is high: 8 A x 230 V x 3 = ~5.5 kW of export needed
+    #       before evcc starts (6 A x 230 x 3 = ~4.1 kW).
+    #   1 = fixed single-phase. Starts at ~1.4-1.8 kW surplus (6-8 A x 230 V),
+    #       best for small PV surplus; max ~3.7 kW (16 A). Needs the charger
+    #       wired/configured for 1 phase.
+    #   0 = auto: evcc switches 1p/3p itself. Each switch PAUSES the Easee, and
+    #       some cars react badly (red lamp, session aborts) — prefer a fixed
+    #       value. With 0, wha's start floor counts ONE phase (start is
+    #       single-phase); control.phases is not used once evcc has published
+    #       phasesConfigured. Check `phasesActive` in MQTT.
+    phases: 3
     mode: pv # wha will drive this between pv and off
-    # Let wha own the surplus gate — keep evcc's own thresholds permissive:
+    # minCurrent / maxCurrent can also be set per loadpoint. See the vehicle
+    # block below for how minCurrent interacts with a limit set in the Easee app.
+    # maxCurrent: 16 # A — never above your circuit/charger rating; keep equal to
+    #                #     wha's control.maxCurrentCeilingA. In `now` mode evcc
+    #                #     writes the Easee dynamic current from this value
+    #                #     (16 A by default) and overrides temporary app limits.
+    # evcc's own surplus gate. `threshold` is a grid-power offset in W (default
+    # 0): evcc enables once export >= minimum charge power + threshold, NOT "as
+    # soon as any surplus exists". Both delays run in parallel with wha's dwells.
     enable:
       delay: 1m
-      threshold: 0 # start as soon as any surplus exists (wha already gated it)
+      threshold: 0
     disable:
       delay: 3m
       threshold: 0 # protects the contactor from rapid cycling
+    # Optional: how/when evcc polls the car for SoC. Default is `charging`
+    # (Renault is only polled while charging, so SoC is an evcc estimate in
+    # between). `connected` + a long interval gives fresher SoC while plugged in.
+    # Car data is only reachable while the car is plugged in. Do NOT set
+    # vehicle `onIdentify: mode` — it fights wha's mode control.
+    # soc:
+    #   poll:
+    #     mode: connected # charging (default) | connected | always
+    #     interval: 30m   # keep long: frequent polls hit Renault cloud rate limits
 
 # Sungrow SH8.0 RT hybrid via Modbus TCP (WiNet-S dongle, recent firmware).
 # One device, three logical meters differing only by usage.
@@ -65,6 +103,13 @@ meters:
     id: 1
     host: CHANGE_ME
     port: 502
+    # Required by the sungrow-hybrid template for usage: battery — evcc refuses to
+    # start without them. Set to your battery's rated charge/discharge power in W
+    # (evcc reads them from holding registers 13051 / 33047; the web UI can probe
+    # the live values). They only bound evcc's own battery control, which wha
+    # doesn't use, so a conservative value is safe.
+    maxchargepower: 5000 # W
+    maxdischargepower: 5000 # W
 
 chargers:
   - name: easee_home
@@ -79,12 +124,20 @@ vehicles:
     type: template
     template: renault
     title: Renault Twingo Electric
-    capacity: 22 # kWh usable — adjust if needed
+    capacity: 27.5 # usable kWh of the 2026 Twingo Electric (LFP) — verify for your car; too small overstates SoC, which stops early
     user: CHANGE_ME # MY Renault account email
     password: CHANGE_ME # MY Renault account password
     vin: CHANGE_ME # optional but recommended (starts with VF...)
-    minCurrent: 8 # A — Twingo Electric minimum at 3 phases
-    maxCurrent: 16 # A — adjust to your installation
+    # minCurrent vs. the Easee app limit: if you capped the charger at 8 A in the
+    # Easee app and minCurrent is also 8, evcc can only ever offer exactly 8 A and
+    # cannot follow the surplus up or down. Either use minCurrent: 6 (evcc then
+    # raises the Easee start current to 7 A — observed/likely, verify in the evcc
+    # log) or raise the app limit so evcc has headroom between min and max.
+    # wha reads the effective value (effectiveMinCurrent) and floors its start
+    # threshold accordingly; keep control.minCurrentA / control.phases in sync as
+    # the fallback used until evcc has published its values.
+    minCurrent: 8 # A — Twingo Electric minimum at 3 phases (use 6 if the app limit is 8 A)
+    maxCurrent: 16 # A — set to your circuit/charger rating, never higher
 
 tariffs:
   currency: EUR

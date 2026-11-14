@@ -238,7 +238,11 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
 | `evcc.loadpointID`          | `1`                  | Which evcc loadpoint to control (1-based) |
 | `control.enableMode`        | `pv`                 | Initial charge mode (`pv` or `now`); switchable at runtime from the dashboard and persisted |
 | `control.autoProfile`       | `surplus`            | Initial auto-charge profile (`surplus`, `power_latch`, `surplus_latch`); switchable at runtime from the dashboard and persisted |
-| `control.startThresholdW`   | `1400`               | Surplus (W) required to start charging |
+| `control.startThresholdW`   | `1400`               | Surplus (W) required to start charging; auto-floored (surplus and `surplus_latch` profiles, not `power_latch`) at min current × 230 V × phases + `startMarginW`. **With the defaults the floor is 5720 W** until evcc publishes its values — see the note below the table |
+| `control.minCurrentA` / `phases` | `8` / `3`      | Used for the start floor only while evcc hasn't published `effectiveMinCurrent` / `phasesConfigured` (evcc `phasesConfigured` `0` = auto counts as 1 phase) |
+| `control.startMarginW`      | `200`                | Margin added to the computed minimum charge power |
+| `control.maxCurrentCeilingA`| `16`                 | Circuit/charger rating (A); `wha` never sends a higher max current |
+| `control.stallTimeout` / `stallRecoveryOff` | `3m` / `90s` | Enabled-but-not-charging detection and the one off/resume recovery |
 | `control.stopThresholdW`    | `0`                  | Surplus (W) below which charging stops |
 | `control.startDwell`        | `2m`                 | Surplus must hold this long before starting (anti-flap) |
 | `control.stopDwell`         | `3m`                 | Low surplus must hold this long before stopping |
@@ -254,6 +258,14 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
 | `web.caRootPath`            | empty                | Path to a reverse proxy's CA root cert, served from `/setup` (empty disables it) |
 | `db.path`                   | `/data/wha.db`       | SQLite database path |
 | `log.level`                 | `info`               | `debug` \| `info` \| `warn` \| `error` |
+
+> **Behaviour change — single-phase installs.** The start threshold is now floored at
+> `(effectiveMinCurrent, else control.minCurrentA) × 230 V × phases + control.startMarginW`.
+> With the defaults (8 A, 3 phases, 200 W) that is **5720 W** until evcc publishes its own values.
+> A single-phase install that relied on starting at 1400 W will not start until evcc reports
+> `effectiveMinCurrent` / `phasesConfigured`, or you set `control.phases: 1` and
+> `control.minCurrentA: 6` (floor then 1580 W). If evcc publishes `phasesConfigured: 0`
+> (automatic 1p/3p), the floor counts 1 phase.
 
 ## Safety model
 
@@ -299,7 +311,9 @@ model and a possible finer two-user hardening split.
 - **80% overshoot.** Coarse Renault SoC means the cap can overshoot by up to a poll
   interval; the evcc `limitSoc` backstop bounds it.
 - **Brief grid draw in `pv` mode.** There's an unavoidable minimum charge power
-  (~1.4 kW single-phase), so a little grid import can occur as surplus dips before evcc pauses.
+  (minimum current × 230 V × phases: ~1.4 kW at 6 A single-phase, ~5.5 kW at 8 A on three phases),
+  so a little grid import can occur as surplus dips before evcc pauses. `wha` floors its start
+  threshold at that minimum, so a too-low `startThresholdW` can't cause start/stop flapping.
 - **Installer issues.** See [Troubleshooting](https://joessst-dev.github.io/wallbox-homeautomation-go/reference/troubleshooting)
   in the user manual for installer-specific problems (missing terminal, Docker daemon, checkconfig errors).
 

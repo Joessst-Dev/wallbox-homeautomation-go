@@ -34,7 +34,13 @@ Env-Schlüsselformat: `WHA_<SECTION>_<KEY>` mit verschachtelten camelCase-Schlü
 |-----|---------|---------|
 | `control.enableMode` | `pv` | Anfänglicher Lademodus, wenn die Ladung aktiviert ist (`pv` = nur Überschuss, `now` = volle Leistung). Wird vom Dashboard-Schalter **Ladeleistung** überschrieben, der über Neustarts hinweg gespeichert bleibt. |
 | `control.autoProfile` | `surplus` | Anfängliches Automatik-Profil beim Start (`surplus`, `power_latch` oder `surplus_latch`). Das ist nur der **Startwert** – das Laufzeitprofil sowie Startschwelle/Ziel-SoC jedes fest-Profils sind Bedienereinstellungen, die über den Dashboard-Schalter **Automatik-Profil** gesetzt und in der Datenbank gespeichert werden, nicht nach dem ersten Start aus Env/YAML gelesen. Siehe [Dashboard → Automatik-Profil](/de/guide/dashboard#automatik-profil). |
-| `control.startThresholdW` | `1400` | Zum Starten der Ladung erforderlicher Überschuss (W) |
+| `control.startThresholdW` | `1400` | Zum Starten der Ladung erforderlicher Überschuss (W). Setze ihn auf ungefähr die Mindestladeleistung **deiner** Phasen × `minCurrent` (3 Phasen × 8 A × 230 V ≈ 5,5 kW; 1 Phase × 6 A ≈ 1,4 kW). `wha` **hebt ihn automatisch** auf mindestens `(effectiveMinCurrent, sonst minCurrentA)` × 230 V × Phasen + `startMarginW` an (Profile Überschuss und `surplus_latch`; **nicht** `power_latch`), ein zu niedriger Wert kann also kein Start/Stopp-Flattern verursachen. Siehe den Hinweis unten. |
+| `control.minCurrentA` | `8` | Minimaler Ladestrom (A) für die Start-Untergrenze. Nur genutzt, solange evcc `effectiveMinCurrent` nicht veröffentlicht hat. Zugleich die untere Grenze, die `POST /api/max-current` akzeptiert. |
+| `control.phases` | `3` | Phasenzahl (`1` oder `3`) für die Start-Untergrenze. Wird **nur** genutzt, wenn evcc `phasesConfigured` nicht veröffentlicht hat (oder einen negativen/unsinnigen Wert). Veröffentlicht evcc `phasesConfigured` > 0, gilt dieser Wert; veröffentlicht es `0` (automatische 1p/3p-Umschaltung), zählt die Untergrenze **1 Phase**, weil ein Start einphasig erfolgt – `control.phases` wird dann *nicht* genutzt. |
+| `control.startMarginW` | `200` | Zusätzliche Watt auf die berechnete Mindestladeleistung für die Start-Untergrenze. |
+| `control.maxCurrentCeilingA` | `16` | Nennstrom von Stromkreis/Wallbox in A. Das Aufheben des Dashboard-Maximalstrom-Limits setzt evccs `maxCurrent` auf diesen Wert. Wird er gesenkt, wird ein gespeichertes Limit darüber beim Start begrenzt (Warnung im Log); ein gespeichertes Limit unter `minCurrentA` wird nach oben begrenzt. Setze ihn auf das, was dein Stromkreis und deine Wallbox tragen – `wha` sendet nie einen höheren Maximalstrom (die Dashboard-Einstellung **Maximaler Ladestrom** wird darauf begrenzt). |
+| `control.stallTimeout` | `3m` | Wallbox aktiviert, aber so lange ohne Ladung → Banner „Stillstand“ im Dashboard und ein Wiederherstellungsversuch pro Ansteck-Sitzung. |
+| `control.stallRecoveryOff` | `90s` | Wie lange der einzelne Wiederherstellungsversuch den Loadpoint auf `off` hält, bevor er fortsetzt. |
 | `control.stopThresholdW` | `0` | Überschuss (W), unterhalb dessen die Ladung stoppt |
 | `control.startDwell` | `2m` | Der Überschuss muss so lange anhalten, bevor gestartet wird (Anti-Flattern) |
 | `control.stopDwell` | `3m` | Ein niedriger Überschuss muss so lange anhalten, bevor gestoppt wird |
@@ -46,6 +52,12 @@ Env-Schlüsselformat: `WHA_<SECTION>_<KEY>` mit verschachtelten camelCase-Schlü
 | `control.republish` | `5m` | Modus + `limitSoc`-Backstop periodisch erneut senden (Set-Topics sind nicht retained) |
 | `control.retentionWindow` | `2160h` (90 Tage) | Samples/Ereignisse, die älter sind, entfernen; `0` deaktiviert das Aufräumen |
 | `control.retentionInterval` | `6h` | Wie oft der Aufräum-Job läuft |
+
+::: warning Verhaltensänderung: die Start-Untergrenze (einphasige Installationen)
+Der effektive Startschwellenwert der Profile **Überschuss** und **surplus_latch** (nicht `power_latch`) ist jetzt `max(startThresholdW, Untergrenze)` mit `Untergrenze = (effectiveMinCurrent, falls evcc ihn veröffentlicht, sonst control.minCurrentA) × 230 V × Phasen + control.startMarginW`.
+
+Mit den Standardwerten (8 A, 3 Phasen, 200 W Reserve) beträgt die Untergrenze **5720 W**, bis evcc seine eigenen Werte veröffentlicht. Eine einphasige Installation, die bisher bei 1400 W startete, **startet nicht**, bis evcc `effectiveMinCurrent` / `phasesConfigured` meldet oder du `control.phases: 1` und `control.minCurrentA: 6` setzt (Untergrenze dann 1580 W). Das Dashboard zeigt den konfigurierten und den effektiven (angehobenen) Wert – siehe `configuredStartThresholdW`, `minChargePowerW` und `startThresholdFloored` in der [API](/de/reference/api#get-api-status).
+:::
 
 ## Web
 
@@ -91,7 +103,13 @@ evcc:
 control:
   enableMode: pv
   autoProfile: surplus
-  startThresholdW: 1400
+  startThresholdW: 1400   # wird automatisch auf minCurrentA x 230 V x phases + startMarginW angehoben
+  minCurrentA: 8
+  phases: 3
+  startMarginW: 200
+  maxCurrentCeilingA: 16  # Nennstrom deines Stromkreises/deiner Wallbox
+  stallTimeout: 3m
+  stallRecoveryOff: 90s
   stopThresholdW: 0
   startDwell: 2m
   stopDwell: 3m

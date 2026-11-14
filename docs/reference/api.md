@@ -21,6 +21,17 @@ the dashboard beyond your home network.
   `{"ok": true}` as JSON. Validation failures return `400` with a plain-text
   error message in either case.
 
+## Cross-site write protection
+
+All write requests under `/api/*` (`POST`, `PUT`, `PATCH`, `DELETE`) are rejected
+with `403` and a JSON body — `{"ok":false,"error":"cross-site request rejected"}` or
+`{"ok":false,"error":"cross-origin request rejected"}` — when `Sec-Fetch-Site` is
+`cross-site`, or when the `Origin` header's host does not match `Host` (or the first
+`X-Forwarded-Host`). `Origin: null` is rejected. Clients that send no `Origin` header
+(`curl`, scripts) are unaffected, and `GET` requests are unaffected. Behind a reverse
+proxy, make sure `Host` (or `X-Forwarded-Host`) reaches `wha` unchanged — see
+[Secure access](/guide/secure-access#reverse-proxy-and-host-headers).
+
 ## Probes
 
 ### `GET /healthz`
@@ -63,6 +74,21 @@ Key fields:
 | `charging` / `connected` / `ready` / `stale` | bool | Loadpoint/vehicle/data-freshness flags |
 | `online` / `brokerConnected` | bool | evcc-online (LWT) and MQTT-broker-connected health flags |
 | `updatedAt` / `updatedAgo` / `hasUpdated` | string / string / bool | When `wha` last received fresh data from evcc |
+| `maxCurrentA` | number | The max charge current `wha` currently asserts (A); `0` if `wha` never set a limit, equal to the ceiling after clearing |
+| `maxCurrentLimited` | bool | `true` only when `0 < maxCurrentA < maxCurrentCeilingA`; `false` when no limit is set or after clearing (the limit then equals the ceiling) |
+| `minCurrentA` | number | Minimum charge current used for the start floor (evcc `effectiveMinCurrent`, else `control.minCurrentA`); also the lowest value `/api/max-current` accepts |
+| `maxCurrentCeilingA` | number | `control.maxCurrentCeilingA` — the highest current `wha` will send |
+| `evccMaxCurrentA` | number | The `maxCurrent` evcc itself reports |
+| `stalled` / `stalledSince` / `stalledAgo` | bool / string / string | Charger enabled but not charging for `control.stallTimeout`; since when and for how long |
+| `stallRecoveryActive` | bool | `true` while the one-time off/resume recovery is in progress |
+| `chargerStatusReason` | string | evcc's `chargerStatusReason`, when published |
+| `vehicleSoCChangedAt` / `vehicleSoCChangedAgo` | string / string | When the vehicle SoC value last changed |
+| `vehicleSoCEstimated` | bool | `true` while charging and the SoC has not changed for more than 5 minutes (shown as *estimated by evcc*) |
+| `configuredStartThresholdW` | int | The start threshold as configured/entered, before flooring |
+| `minChargePowerW` | int | The computed start floor: min current × 230 V × phases + `control.startMarginW` |
+| `startThresholdFloored` | bool | `true` when the effective start threshold was raised to `minChargePowerW` (surplus and `surplus_latch` only; `power_latch` is never floored) |
+
+Compare `configuredStartThresholdW` with `minChargePowerW` (or check `startThresholdFloored`) to see whether flooring applied.
 
 ## Overrides and charging controls
 
@@ -85,6 +111,30 @@ Sets the persistent charge-power mode used whenever charging is enabled
 | Field | Type | Values |
 |-------|------|--------|
 | `power` | string | `pv` \| `now` |
+
+### `POST /api/max-current`
+
+Sets the persistent **max charge current** (A). `wha` publishes it to evcc as
+`loadpoints/<id>/maxCurrent/set`. The value is persisted in the `settings` table,
+published on first run, on change, on broker reconnect and on the
+`control.republish` cadence, and always clamped to `control.maxCurrentCeilingA`.
+
+| Field | Type | Values |
+|-------|------|--------|
+| `amps` | number | **Required.** `control.minCurrentA` – `control.maxCurrentCeilingA`; `0` or a present-but-empty field **clears** the limit |
+
+Form field `amps`, or JSON `{"amps": 8}`. A request without the `amps` key returns `400` (`amps is required (0 or empty clears the limit)`).
+
+- **Clearing** (`amps=0` or present-but-empty): the limit is set to `control.maxCurrentCeilingA` and persisted, and `wha` keeps publishing that value from then on (first tick after a restart, on change, on reconnect, on the evcc online edge and on the republish cadence). `/api/status` then shows `maxCurrentA` equal to the ceiling and `maxCurrentLimited: false`. If `wha` never set a limit, clearing does nothing and `maxCurrentA` stays `0`.
+- Clearing therefore sets evcc's `maxCurrent` to the ceiling, which may differ from what evcc had before `wha` first touched it — set `control.maxCurrentCeilingA` to your circuit/charger rating.
+- If you later lower `control.maxCurrentCeilingA`, a saved limit above the new ceiling is clamped to it at startup (a warning is logged) and republished; a saved limit below `control.minCurrentA` is clamped up.
+- `400` for a non-numeric or out-of-range value (below `control.minCurrentA` or above `control.maxCurrentCeilingA`); `500` if persisting the setting fails.
+
+```sh
+curl -X POST -d amps=8 http://<your-pi>:8080/api/max-current
+curl -X POST -H 'Content-Type: application/json' -d '{"amps":8}' http://<your-pi>:8080/api/max-current
+curl -X POST -d amps=0 http://<your-pi>:8080/api/max-current   # clear
+```
 
 ### `POST /api/auto-profile`
 
@@ -131,6 +181,9 @@ Returns recent charge sessions as JSON. Query params: `limit` (default 20).
 
 Returns recent controller/command audit events as JSON. Query params:
 `limit` (default 50).
+
+Stall and max-current events: `stalled` (detected/cleared), `stall_recovery`
+(`off`/`resume`), `max_current:N`, `max_current:clear` and `set_max_current:N`.
 
 ### `GET /api/history`
 
