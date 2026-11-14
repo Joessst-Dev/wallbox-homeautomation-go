@@ -113,6 +113,11 @@ services:
         while :; do
           if [ -f "$$src" ] && ! cmp -s "$$src" "$$dst" 2>/dev/null; then
             cp "$$src" "$$dst"
+            # Caddy writes root.crt 0600/root; cp preserves that on the new
+            # copy, and wha (distroless, uid 65532) then gets EACCES on
+            # /setup/root.crt. It is the PUBLIC half of the CA — the key
+            # never leaves caddy-data — so world-readable is correct.
+            chmod 644 "$$dst"
           fi
           sleep 10
         done

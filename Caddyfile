@@ -8,6 +8,16 @@
 # `tls internal` forces Caddy's local CA even for a bare IP/hostname SAN,
 # where a public CA could never issue a certificate. Trust the root it
 # generates on each device via the in-UI guide at https://<address>/setup.
+
+# Clients never send SNI for a bare IP address (RFC 6066 allows hostnames only),
+# so with WHA_SITE_ADDRESS set to the Pi's LAN IP — what scripts/install.sh
+# defaults to — Caddy sees an empty ServerName, finds no matching certificate and
+# aborts the handshake with "tlsv1 alert internal error". default_sni tells it
+# which name to assume when SNI is absent. No-op when the address is a hostname.
+{
+	default_sni {$WHA_SITE_ADDRESS}
+}
+
 {$WHA_SITE_ADDRESS} {
 	tls internal
 	reverse_proxy wha:8080
