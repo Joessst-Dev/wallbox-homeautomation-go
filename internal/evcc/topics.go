@@ -7,8 +7,9 @@ import "fmt"
 //
 // All read topics are published retained by evcc as UTF-8 string payloads.
 // Command topics use the SAME casing as their read counterparts — in
-// particular the SoC-limit setter is "limitSoc/set" (camelCase); a lowercase
-// "limitsoc/set" is silently ignored by evcc.
+// particular the SoC-limit setter is "limitSoc/set" and the current-limit
+// setter is "maxCurrent/set" (camelCase); a lowercase "limitsoc/set" or
+// "maxcurrent/set" is silently ignored by evcc.
 type Topics struct {
 	// site (read)
 	GridPower    string
@@ -26,10 +27,22 @@ type Topics struct {
 	VehicleSoC  string
 	Mode        string
 	LimitSoC    string
+	// EffectiveMinCurrent is evcc's effective minimum charge current (A),
+	// combining the loadpoint and vehicle minimums.
+	EffectiveMinCurrent string
+	// PhasesConfigured is the configured phase count (0 = automatic 1p/3p
+	// switching); PhasesActive is the number of phases currently in use.
+	PhasesConfigured string
+	PhasesActive     string
+	// ChargerStatusReason is the charger's free-text status reason (display only).
+	ChargerStatusReason string
+	// MaxCurrent is the loadpoint's max charge current (A).
+	MaxCurrent string
 
 	// loadpoint (write)
-	ModeSet     string
-	LimitSoCSet string
+	ModeSet       string
+	LimitSoCSet   string
+	MaxCurrentSet string
 }
 
 // NewTopics builds the topic set for the given prefix and loadpoint id.
@@ -51,8 +64,15 @@ func NewTopics(prefix, loadpointID string) Topics {
 		Mode:        lp + "/mode",
 		LimitSoC:    lp + "/limitSoc",
 
-		ModeSet:     lp + "/mode/set",
-		LimitSoCSet: lp + "/limitSoc/set",
+		EffectiveMinCurrent: lp + "/effectiveMinCurrent",
+		PhasesConfigured:    lp + "/phasesConfigured",
+		PhasesActive:        lp + "/phasesActive",
+		ChargerStatusReason: lp + "/chargerStatusReason",
+		MaxCurrent:          lp + "/maxCurrent",
+
+		ModeSet:       lp + "/mode/set",
+		LimitSoCSet:   lp + "/limitSoc/set",
+		MaxCurrentSet: lp + "/maxCurrent/set",
 	}
 }
 
@@ -62,5 +82,6 @@ func (t Topics) readSubscriptions() []string {
 	return []string{
 		t.GridPower, t.PVPower, t.HomePower, t.BatterySoC, t.BatteryPower, t.Status,
 		t.ChargePower, t.Charging, t.Connected, t.Enabled, t.VehicleSoC, t.Mode, t.LimitSoC,
+		t.EffectiveMinCurrent, t.PhasesConfigured, t.PhasesActive, t.ChargerStatusReason, t.MaxCurrent,
 	}
 }

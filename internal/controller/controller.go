@@ -20,6 +20,7 @@ import (
 type Commander interface {
 	SetMode(mode string) error
 	SetLimitSoC(pct int) error
+	SetMaxCurrent(amps int) error
 }
 
 // SnapshotProvider supplies the latest evcc state. Implemented by *evcc.Store.
@@ -49,6 +50,7 @@ const (
 	autoProfileSetting      = "auto_profile"
 	startThresholdKeyPrefix = "start_threshold_w:"
 	targetSoCKeyPrefix      = "target_soc:"
+	maxCurrentSetting       = "max_current_a"
 )
 
 // settingKey joins a per-profile settings key prefix with the profile name.
@@ -81,13 +83,22 @@ type Controller struct {
 	lastSurplus  float64
 	lastSnapshot evcc.Snapshot
 	lastTickAt   time.Time
+	// stall is written only by the loop (inside the locked section of tick) and
+	// read by Status; the loop reads its own previous value under the lock too.
+	stall StallState
 
 	// The following are touched only by the loop goroutine (no lock needed).
-	lastMode            string // last published desired mode ("" = none yet)
-	lastPublishAt       time.Time
-	limitSoCSet         bool // limitSoc backstop confirmed published at least once
-	lastLimitSoC        int  // last published limitSoc target (for change detection)
-	lastLimitPublishAt  time.Time
+	lastMode           string // last published desired mode ("" = none yet)
+	lastPublishAt      time.Time
+	limitSoCSet        bool // limitSoc backstop confirmed published at least once
+	lastLimitSoC       int  // last published limitSoc target (for change detection)
+	lastLimitPublishAt time.Time
+	// lastMaxCurrent is the max-current limit wha last published (0 = none yet).
+	lastMaxCurrent          int
+	lastMaxCurrentPublishAt time.Time
+	// lastStartThresholdW is the last effective start threshold logged, so the
+	// min-charge-power floor is logged on change rather than every tick.
+	lastStartThresholdW float64
 	prevBrokerConnected bool
 	prevOnline          bool
 	prevCharging        bool
@@ -125,6 +136,7 @@ func (c *Controller) Run(ctx context.Context) error {
 	c.loadAutoProfile(ctx)
 	c.loadStartThreshold(ctx)
 	c.loadTargetSoC(ctx)
+	c.loadMaxCurrent(ctx)
 
 	if c.cfg.RetentionWindow > 0 {
 		go c.janitor(ctx)
@@ -160,6 +172,7 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	ctrl.StartThresholdW = maps.Clone(c.ctrl.StartThresholdW)
 	ctrl.TargetSoC = maps.Clone(c.ctrl.TargetSoC)
 	prevState, prevTimers := c.state, c.timers
+	prevStall := c.stall
 	c.mu.Unlock()
 
 	in := InputsFromSnapshot(now, snap, c.cfg, ctrl)
@@ -167,10 +180,14 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 	surplus := Surplus(in)
 	limitTarget := LimitSoCTarget(now, in, c.cfg)
 	expireOverride := ctrl.Override != OverrideAuto && !overrideActive(now, in)
+	// Stall detection runs after Decide and never alters it: it can only swap
+	// the *published* mode for off during its one recovery pulse.
+	stall := StepStall(now, in, dec.DesiredMode, limitTarget, prevStall, c.cfg)
 
 	c.mu.Lock()
 	c.state = dec.State
 	c.timers = dec.Timers
+	c.stall = stall
 	// Only clear the override if it is still the one we read above: a SetOverride
 	// (e.g. a manual ForceOff) racing in during the unlocked window must win, not
 	// be silently discarded by this stale-read expiry. The cap-bypass clears with
@@ -210,10 +227,67 @@ func (c *Controller) tick(ctx context.Context, now time.Time) {
 			"surplus", surplus, "vehicleSoc", in.VehicleSoC)
 	}
 
-	c.publishMode(ctx, now, dec, in, surplus, force)
+	c.logStartThreshold(in)
+	c.recordStallTransitions(ctx, now, prevStall, stall, in, surplus)
+
+	// pub is the decision actually sent to evcc: Decide's, except during the
+	// stall-recovery pulse, which may only ever force off.
+	pub := dec
+	if stall.RecoveryActive(now) {
+		pub.DesiredMode = ModeOff
+		pub.Reason = "stall recovery: off pulse"
+	}
+
+	c.publishMode(ctx, now, pub, in, surplus, force)
 	c.publishLimitSoC(ctx, now, limitTarget, in, surplus, snap.BrokerConnected, force)
+	c.publishMaxCurrent(ctx, now, ctrl.MaxCurrentA, in, surplus, snap.BrokerConnected, force)
 	c.trackSession(ctx, now, in, dec.State)
-	c.recordSample(ctx, now, in, surplus, dec)
+	c.recordSample(ctx, now, in, surplus, pub)
+}
+
+// logStartThreshold logs the effective start threshold whenever it changes
+// while the min-charge-power floor lifts it above the configured value, so the
+// operator can see why a low startThresholdW is not honored without a log line
+// per tick.
+func (c *Controller) logStartThreshold(in Inputs) {
+	eff := effectiveStartThreshold(in, c.cfg)
+	if eff == c.lastStartThresholdW {
+		return
+	}
+	c.lastStartThresholdW = eff
+	if configured := configuredStartThreshold(in, c.cfg); eff > configured {
+		c.log.Info("controller: start threshold floored at minimum charge power",
+			"configuredW", configured, "effectiveW", eff,
+			"minChargePowerW", MinChargePowerW(in, c.cfg), "startMarginW", c.cfg.StartMarginW)
+	}
+}
+
+// recordStallTransitions writes audit events and logs for the stall latch and
+// the recovery pulse edges between prev and next.
+func (c *Controller) recordStallTransitions(ctx context.Context, now time.Time, prev, next StallState, in Inputs, surplus float64) {
+	if !prev.Stalled && next.Stalled {
+		c.recordEvent(ctx, store.Event{
+			TS: now, Type: "stalled", Action: "detected",
+			Detail: "charging wanted and enabled, but no power for " + c.cfg.StallTimeout.String(),
+		}, in, surplus)
+		c.log.Warn("controller: loadpoint stalled", "since", next.StalledSince,
+			"chargeW", in.ChargeW, "vehicleSoc", in.VehicleSoC, "recoveryPending", next.RecoveryActive(now))
+	}
+	if prev.Stalled && !next.Stalled {
+		c.recordEvent(ctx, store.Event{TS: now, Type: "stalled", Action: "cleared"}, in, surplus)
+		c.log.Info("controller: loadpoint stall cleared")
+	}
+	if prev.RecoveryUntil.IsZero() && !next.RecoveryUntil.IsZero() {
+		c.recordEvent(ctx, store.Event{
+			TS: now, Type: "stall_recovery", Action: "off",
+			Detail: "one-time off pulse for " + c.cfg.StallRecoveryOff.String(),
+		}, in, surplus)
+		c.log.Warn("controller: stall recovery: forcing off", "until", next.RecoveryUntil)
+	}
+	if !prev.RecoveryUntil.IsZero() && next.RecoveryUntil.IsZero() {
+		c.recordEvent(ctx, store.Event{TS: now, Type: "stall_recovery", Action: "resume"}, in, surplus)
+		c.log.Info("controller: stall recovery: resuming normal control")
+	}
 }
 
 // publishMode sends the desired mode when it changes, when forced (broker
@@ -265,6 +339,44 @@ func (c *Controller) publishLimitSoC(ctx context.Context, now time.Time, target 
 	c.lastLimitSoC = target
 	c.lastLimitPublishAt = now
 	c.log.Debug("controller: limitSoc backstop published", "limit", target)
+}
+
+// clampMaxCurrent bounds a max-current limit to [cfg.MinCurrentA,
+// cfg.MaxCurrentCeilingA]. The ceiling is applied last so it always wins: wha
+// never publishes above the circuit rating, whatever got into memory.
+func clampMaxCurrent(amps int, cfg config.Control) int {
+	amps = max(amps, cfg.MinCurrentA)
+	return min(amps, cfg.MaxCurrentCeilingA)
+}
+
+// publishMaxCurrent keeps evcc's loadpoint maxCurrent at the operator's limit.
+// Like the limitSoc backstop it publishes on first run, on change, when forced
+// (broker reconnect / evcc online edge), and on the republish cadence, and the
+// value is re-clamped at publish time. want == 0 means wha has never owned a
+// limit, so nothing is published. (A cleared limit is held at the ceiling, not
+// 0 — see ClearMaxCurrent — so it keeps being re-asserted like any other.)
+func (c *Controller) publishMaxCurrent(ctx context.Context, now time.Time, want int, in Inputs, surplus float64, brokerConnected, force bool) {
+	if !brokerConnected || want <= 0 {
+		return
+	}
+
+	amps := clampMaxCurrent(want, c.cfg)
+	changed := amps != c.lastMaxCurrent
+	if !changed && !force && now.Sub(c.lastMaxCurrentPublishAt) < c.cfg.Republish {
+		return
+	}
+	if err := c.cmd.SetMaxCurrent(amps); err != nil {
+		c.log.Warn("controller: SetMaxCurrent failed (will retry)", "amps", amps, "err", err)
+		return
+	}
+	if changed {
+		c.recordEvent(ctx, store.Event{
+			TS: now, Type: "command", Action: "set_max_current:" + strconv.Itoa(amps),
+		}, in, surplus)
+	}
+	c.lastMaxCurrent = amps
+	c.lastMaxCurrentPublishAt = now
+	c.log.Debug("controller: maxCurrent published", "amps", amps)
 }
 
 // trackSession opens/closes charge sessions on the evcc charging edge and
@@ -696,55 +808,191 @@ func (c *Controller) loadTargetSoC(ctx context.Context) {
 	}
 }
 
+// ErrInvalidMaxCurrent is returned by SetMaxCurrent when the requested limit
+// is outside [cfg.MinCurrentA, cfg.MaxCurrentCeilingA] (and not 0 = clear).
+var ErrInvalidMaxCurrent = errors.New("invalid max charge current")
+
+// SetMaxCurrent sets the persistent max charge-current limit (amps) wha
+// publishes to evcc's loadpoint maxCurrent, e.g. to keep a "now" charge below
+// what the circuit can carry. It must lie within [cfg.MinCurrentA,
+// cfg.MaxCurrentCeilingA]; 0 clears the limit (see ClearMaxCurrent). A limit
+// equal to the ceiling means "no wha restriction" for display purposes. The DB
+// write happens before the in-memory update so a failed persist never leaves
+// Status() reporting a limit that a restart would not restore. The loop
+// publishes the change on its next tick (never under c.mu).
+func (c *Controller) SetMaxCurrent(amps int) error {
+	if amps == 0 {
+		return c.ClearMaxCurrent()
+	}
+	if amps < c.cfg.MinCurrentA || amps > c.cfg.MaxCurrentCeilingA {
+		return fmt.Errorf("%w %d A (want %d..%d A, or 0 to clear)",
+			ErrInvalidMaxCurrent, amps, c.cfg.MinCurrentA, c.cfg.MaxCurrentCeilingA)
+	}
+	if err := c.rec.SetSetting(context.Background(), maxCurrentSetting, strconv.Itoa(amps)); err != nil {
+		return fmt.Errorf("persist max current: %w", err)
+	}
+	c.mu.Lock()
+	c.ctrl.MaxCurrentA = amps
+	c.mu.Unlock()
+
+	if err := c.rec.InsertEvent(context.Background(), store.Event{
+		TS: c.clock.Now(), Type: "command", Action: "max_current:" + strconv.Itoa(amps),
+	}); err != nil {
+		c.log.Warn("controller: InsertEvent (max_current) failed", "err", err)
+	}
+	c.log.Info("controller: max current set", "amps", amps)
+	return nil
+}
+
+// ClearMaxCurrent lifts the operator's max-current limit. evcc persists the
+// last maxCurrent it received, so simply going quiet would leave the old limit
+// in force forever; instead the limit becomes cfg.MaxCurrentCeilingA and is
+// persisted, so the normal publish triggers (first tick after a restart, change,
+// reconnect, evcc online edge, republish cadence) keep re-asserting the ceiling
+// even if a single publish is lost. If wha has never owned a limit, clearing is
+// a no-op: there is nothing at evcc to undo.
+func (c *Controller) ClearMaxCurrent() error {
+	c.mu.Lock()
+	owned := c.ctrl.MaxCurrentA != 0
+	c.mu.Unlock()
+	if !owned {
+		return nil
+	}
+	ceiling := c.cfg.MaxCurrentCeilingA
+	if err := c.rec.SetSetting(context.Background(), maxCurrentSetting, strconv.Itoa(ceiling)); err != nil {
+		return fmt.Errorf("persist max current: %w", err)
+	}
+	c.mu.Lock()
+	c.ctrl.MaxCurrentA = ceiling
+	c.mu.Unlock()
+
+	if err := c.rec.InsertEvent(context.Background(), store.Event{
+		TS: c.clock.Now(), Type: "command", Action: "max_current:clear",
+	}); err != nil {
+		c.log.Warn("controller: InsertEvent (max_current) failed", "err", err)
+	}
+	c.log.Info("controller: max current cleared", "resetToA", c.cfg.MaxCurrentCeilingA)
+	return nil
+}
+
+// loadMaxCurrent restores the persisted max-current limit at startup. A
+// missing, unparseable, or non-positive value leaves the limit unset. An
+// out-of-range value (e.g. stored before control.maxCurrentCeilingA was lowered)
+// is NOT dropped: evcc still holds it, so it is clamped into [minCurrentA,
+// ceiling], persisted, and then published by the first tick like any limit.
+func (c *Controller) loadMaxCurrent(ctx context.Context) {
+	raw, ok, err := c.rec.GetSetting(ctx, maxCurrentSetting)
+	if err != nil {
+		c.log.Warn("controller: load max current failed (no limit)", "err", err)
+		return
+	}
+	if !ok {
+		return
+	}
+	amps, err := strconv.Atoi(raw)
+	if err != nil || amps <= 0 {
+		return
+	}
+	if clamped := clampMaxCurrent(amps, c.cfg); clamped != amps {
+		c.log.Warn("controller: stored max current out of range, clamping", "stored", amps, "clamped", clamped,
+			"minCurrentA", c.cfg.MinCurrentA, "maxCurrentCeilingA", c.cfg.MaxCurrentCeilingA)
+		if err := c.rec.SetSetting(ctx, maxCurrentSetting, strconv.Itoa(clamped)); err != nil {
+			c.log.Warn("controller: persist clamped max current failed", "err", err)
+		}
+		amps = clamped
+	}
+	c.mu.Lock()
+	c.ctrl.MaxCurrentA = amps
+	c.mu.Unlock()
+	c.log.Info("controller: max current restored", "amps", amps)
+}
+
 // StatusView is a read-only snapshot of the controller for the web layer.
 type StatusView struct {
-	State           State
-	DesiredMode     string
-	Reason          string
-	ReasonCode      ReasonCode
-	Override        Override
-	OverrideUntil   time.Time
-	CapBypass       bool
-	CapBypassSoC    int
-	ChargePower     string
-	AutoProfile     string
-	StartThresholdW float64
-	TargetSoC       int
-	SoCCap          int
-	SoCMax          int
-	Surplus         float64
-	Inputs          Inputs
-	Snapshot        evcc.Snapshot
-	UpdatedAt       time.Time
+	State         State
+	DesiredMode   string
+	Reason        string
+	ReasonCode    ReasonCode
+	Override      Override
+	OverrideUntil time.Time
+	CapBypass     bool
+	CapBypassSoC  int
+	ChargePower   string
+	AutoProfile   string
+	// StartThresholdW is the effective start threshold (after the
+	// min-charge-power floor); ConfiguredStartThresholdW is the operator's value
+	// before it, and MinChargePowerW the floor's base (without StartMarginW).
+	StartThresholdW           float64
+	ConfiguredStartThresholdW float64
+	MinChargePowerW           float64
+	TargetSoC                 int
+	SoCCap                    int
+	SoCMax                    int
+	// MaxCurrentA is the operator's max charge-current limit (0 = wha never set
+	// one; MaxCurrentCeilingA = cleared, i.e. no wha restriction);
+	// MinCurrentA/MaxCurrentCeilingA are the bounds SetMaxCurrent accepts.
+	MaxCurrentA        int
+	MinCurrentA        int
+	MaxCurrentCeilingA int
+	// Stalled is true while the loadpoint is flagged stalled (see StallState);
+	// StalledSince is when that stall began, StallRecoveryActive whether the
+	// one-time recovery off pulse is in force.
+	Stalled             bool
+	StalledSince        time.Time
+	StallRecoveryActive bool
+	// VehicleSoCChangedAt is when evcc's vehicle SoC value last changed;
+	// VehicleSoCEstimated is true while charging with that value older than
+	// SoCEstimatedAfter (display only, never a stale gate).
+	VehicleSoCChangedAt time.Time
+	VehicleSoCEstimated bool
+	Surplus             float64
+	Inputs              Inputs
+	Snapshot            evcc.Snapshot
+	UpdatedAt           time.Time
 }
 
 // Status returns the latest decision state.
 func (c *Controller) Status() StatusView {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	// effIn carries only the runtime overrides so the effective-value helpers
-	// (shared with Decide) resolve the same fallback-to-config precedence here.
+	// effIn is the last tick's Inputs (for the evcc-derived min-charge-power
+	// floor) with the *current* runtime overrides layered on, so the
+	// effective-value helpers (shared with Decide) resolve the same precedence
+	// here even right after a Set* call, before the next tick.
 	thresholdW, targetSoC := c.ctrl.latchOverrides(c.cfg)
-	effIn := Inputs{AutoProfile: c.ctrl.AutoProfile, StartThresholdW: thresholdW, TargetSoC: targetSoC}
+	effIn := c.lastInputs
+	effIn.AutoProfile = c.ctrl.AutoProfile
+	effIn.StartThresholdW = thresholdW
+	effIn.TargetSoC = targetSoC
 	return StatusView{
-		State:           c.state,
-		DesiredMode:     c.lastDecision.DesiredMode,
-		Reason:          c.lastDecision.Reason,
-		ReasonCode:      c.lastDecision.ReasonCode,
-		Override:        c.ctrl.Override,
-		OverrideUntil:   c.ctrl.OverrideUntil,
-		CapBypass:       c.ctrl.CapBypass,
-		CapBypassSoC:    c.ctrl.CapBypassSoC,
-		ChargePower:     c.ctrl.ChargePower,
-		AutoProfile:     effectiveProfile(effIn, c.cfg),
-		StartThresholdW: effectiveStartThreshold(effIn, c.cfg),
-		TargetSoC:       effectiveTargetSoC(effIn, c.cfg),
-		SoCCap:          c.cfg.SoCCap,
-		SoCMax:          c.cfg.SoCMax,
-		Surplus:         c.lastSurplus,
-		Inputs:          c.lastInputs,
-		Snapshot:        c.lastSnapshot,
-		UpdatedAt:       c.lastTickAt,
+		State:                     c.state,
+		DesiredMode:               c.lastDecision.DesiredMode,
+		Reason:                    c.lastDecision.Reason,
+		ReasonCode:                c.lastDecision.ReasonCode,
+		Override:                  c.ctrl.Override,
+		OverrideUntil:             c.ctrl.OverrideUntil,
+		CapBypass:                 c.ctrl.CapBypass,
+		CapBypassSoC:              c.ctrl.CapBypassSoC,
+		ChargePower:               c.ctrl.ChargePower,
+		AutoProfile:               effectiveProfile(effIn, c.cfg),
+		StartThresholdW:           effectiveStartThreshold(effIn, c.cfg),
+		ConfiguredStartThresholdW: configuredStartThreshold(effIn, c.cfg),
+		MinChargePowerW:           MinChargePowerW(effIn, c.cfg),
+		TargetSoC:                 effectiveTargetSoC(effIn, c.cfg),
+		SoCCap:                    c.cfg.SoCCap,
+		SoCMax:                    c.cfg.SoCMax,
+		MaxCurrentA:               c.ctrl.MaxCurrentA,
+		MinCurrentA:               c.cfg.MinCurrentA,
+		MaxCurrentCeilingA:        c.cfg.MaxCurrentCeilingA,
+		Stalled:                   c.stall.Stalled,
+		StalledSince:              c.stall.StalledSince,
+		StallRecoveryActive:       c.stall.RecoveryActive(c.lastTickAt),
+		VehicleSoCChangedAt:       c.lastSnapshot.VehicleSoC.ChangedAt,
+		VehicleSoCEstimated:       VehicleSoCEstimated(c.lastTickAt, c.lastInputs.Charging, c.lastSnapshot.VehicleSoC),
+		Surplus:                   c.lastSurplus,
+		Inputs:                    c.lastInputs,
+		Snapshot:                  c.lastSnapshot,
+		UpdatedAt:                 c.lastTickAt,
 	}
 }
 

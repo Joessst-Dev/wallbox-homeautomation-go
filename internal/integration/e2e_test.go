@@ -113,6 +113,7 @@ func validMode(s string) bool {
 }
 
 // validLimit reports whether s is a well-formed (all-digit) SoC limit payload.
+// It also validates maxCurrent payloads, which are likewise plain integers.
 func validLimit(s string) bool {
 	if s == "" {
 		return false
@@ -201,6 +202,7 @@ var _ = Describe("End-to-end (embedded broker + real components)", func() {
 		}
 		subscribe(tp.ModeSet, validMode)
 		subscribe(tp.LimitSoCSet, validLimit)
+		subscribe(tp.MaxCurrentSet, validLimit)
 
 		pub = func(topic, payload string) {
 			GinkgoHelper()
@@ -261,7 +263,12 @@ var _ = Describe("End-to-end (embedded broker + real components)", func() {
 	})
 
 	// publishSurplus publishes a healthy, connected state with ample PV surplus.
+	// evcc also reports a single-phase 6 A minimum, so wha's min-charge-power
+	// floor is derived from evcc (6 × 230 × 1 + 200 W margin = 1580 W) rather
+	// than the 8 A three-phase config fallback (5720 W), which 3 kW would miss.
 	publishSurplus := func() {
+		pub(tp.EffectiveMinCurrent, "6")
+		pub(tp.PhasesConfigured, "1")
 		pub(tp.Status, "online")
 		pub(tp.PVPower, "4000")
 		pub(tp.GridPower, "-3000") // exporting 3 kW → surplus well over the start threshold
@@ -290,6 +297,37 @@ var _ = Describe("End-to-end (embedded broker + real components)", func() {
 		publishSurplus()
 		Eventually(func() string { return cmds.last(tp.LimitSoCSet) }, eventuallyTimeout, eventuallyPoll).
 			Should(Equal("80")) // config default SoCCap
+	})
+
+	It("does not start on surplus below the min-charge-power floor derived from evcc", func() {
+		// evcc reports a three-phase 8 A minimum (5520 W + 200 W margin): 3 kW of
+		// surplus must not start charging, or evcc would pull the rest from the grid.
+		pub(tp.EffectiveMinCurrent, "8")
+		pub(tp.PhasesConfigured, "3")
+		pub(tp.Status, "online")
+		pub(tp.PVPower, "4000")
+		pub(tp.GridPower, "-3000")
+		pub(tp.Connected, "true")
+		pub(tp.Charging, "false")
+		pub(tp.VehicleSoC, "50")
+
+		Eventually(func() string { return cmds.last(tp.ModeSet) }, eventuallyTimeout, eventuallyPoll).
+			Should(Equal("off"))
+		Consistently(func() string { return cmds.last(tp.ModeSet) }, 150*time.Millisecond, eventuallyPoll).
+			Should(Equal("off"))
+	})
+
+	It("publishes the operator max charge current to the camelCase maxCurrent/set topic via POST /api/max-current", func() {
+		publishSurplus()
+		doForm(srv, "/api/max-current", "amps=8")
+
+		Eventually(func() string { return cmds.last(tp.MaxCurrentSet) }, eventuallyTimeout, eventuallyPoll).
+			Should(Equal("8"))
+
+		// Clearing the limit hands evcc back the ceiling (config default 16 A).
+		doForm(srv, "/api/max-current", "amps=0")
+		Eventually(func() string { return cmds.last(tp.MaxCurrentSet) }, eventuallyTimeout, eventuallyPoll).
+			Should(Equal("16"))
 	})
 
 	It("forces charging on with the operator charge-power mode via POST /api/override", func() {

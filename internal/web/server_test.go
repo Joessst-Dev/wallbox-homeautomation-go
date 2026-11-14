@@ -87,6 +87,10 @@ type fakeController struct {
 	targetSoCCalled bool
 	targetSoCValue  int
 	targetSoCErr    error
+
+	maxCurrentCalled bool
+	maxCurrentValue  int
+	maxCurrentErr    error
 }
 
 func (f *fakeController) Status() controller.StatusView { return f.status }
@@ -121,6 +125,12 @@ func (f *fakeController) SetTargetSoC(pct int) error {
 	f.targetSoCCalled = true
 	f.targetSoCValue = pct
 	return f.targetSoCErr
+}
+
+func (f *fakeController) SetMaxCurrent(amps int) error {
+	f.maxCurrentCalled = true
+	f.maxCurrentValue = amps
+	return f.maxCurrentErr
 }
 
 // fakeUpdater is a deterministic stand-in for *updater.Updater. It records the
@@ -295,6 +305,73 @@ var _ = Describe("Web Server", func() {
 			Expect(vm["surplusW"]).To(BeNumerically("==", 2500))
 			Expect(vm["brokerConnected"]).To(BeTrue())
 		})
+
+		It("exposes the max-current limit, stall flag, start-threshold floor, and SoC freshness", func() {
+			now := time.Now()
+			ctrl.status.StartThresholdW = 5720
+			ctrl.status.ConfiguredStartThresholdW = 1400
+			ctrl.status.MinChargePowerW = 5520
+			ctrl.status.MaxCurrentA = 8
+			ctrl.status.MinCurrentA = 6
+			ctrl.status.MaxCurrentCeilingA = 16
+			ctrl.status.Stalled = true
+			ctrl.status.StalledSince = now.Add(-4 * time.Minute)
+			ctrl.status.StallRecoveryActive = true
+			ctrl.status.VehicleSoCChangedAt = now.Add(-20 * time.Minute)
+			ctrl.status.VehicleSoCEstimated = true
+			ctrl.status.Snapshot.MaxCurrent = evcc.FloatMetric{Value: 8, Seen: true}
+			ctrl.status.Snapshot.ChargerStatusReason = evcc.StringMetric{Value: "waitingforauthorization", Seen: true}
+
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			var vm map[string]any
+			Expect(json.Unmarshal([]byte(bodyString(resp)), &vm)).To(Succeed())
+
+			Expect(vm["startThresholdW"]).To(BeNumerically("==", 5720))
+			Expect(vm["configuredStartThresholdW"]).To(BeNumerically("==", 1400))
+			Expect(vm["minChargePowerW"]).To(BeNumerically("==", 5520))
+			Expect(vm["startThresholdFloored"]).To(BeTrue())
+
+			Expect(vm["maxCurrentA"]).To(BeNumerically("==", 8))
+			Expect(vm["maxCurrentLimited"]).To(BeTrue())
+			Expect(vm["minCurrentA"]).To(BeNumerically("==", 6))
+			Expect(vm["maxCurrentCeilingA"]).To(BeNumerically("==", 16))
+			Expect(vm["evccMaxCurrentA"]).To(BeNumerically("==", 8))
+
+			Expect(vm["stalled"]).To(BeTrue())
+			Expect(vm["stalledSince"]).To(Equal(ctrl.status.StalledSince.UTC().Format(time.RFC3339)))
+			Expect(vm["stalledAgo"]).To(MatchRegexp(`^[34]m$`))
+			Expect(vm["stallRecoveryActive"]).To(BeTrue())
+			Expect(vm["chargerStatusReason"]).To(Equal("waitingforauthorization"))
+
+			Expect(vm["vehicleSoCChangedAt"]).To(Equal(ctrl.status.VehicleSoCChangedAt.UTC().Format(time.RFC3339)))
+			Expect(vm["vehicleSoCEstimated"]).To(BeTrue())
+		})
+
+		It("reports a limit held at the ceiling (a cleared limit) as not limited", func() {
+			ctrl.status.MaxCurrentA = 16
+			ctrl.status.MaxCurrentCeilingA = 16
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+			var vm map[string]any
+			Expect(json.Unmarshal([]byte(bodyString(resp)), &vm)).To(Succeed())
+			Expect(vm["maxCurrentA"]).To(BeNumerically("==", 16))
+			Expect(vm["maxCurrentLimited"]).To(BeFalse())
+		})
+
+		It("reports no limit, no stall, and no SoC change time when none apply", func() {
+			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/api/status", nil))
+			var vm map[string]any
+			Expect(json.Unmarshal([]byte(bodyString(resp)), &vm)).To(Succeed())
+
+			Expect(vm["maxCurrentA"]).To(BeNumerically("==", 0))
+			Expect(vm["maxCurrentLimited"]).To(BeFalse())
+			Expect(vm["evccMaxCurrentA"]).To(BeNumerically("==", 0))
+			Expect(vm["stalled"]).To(BeFalse())
+			Expect(vm).NotTo(HaveKey("stalledSince"))
+			Expect(vm).NotTo(HaveKey("vehicleSoCChangedAt"))
+			Expect(vm["vehicleSoCEstimated"]).To(BeFalse())
+			Expect(vm["startThresholdFloored"]).To(BeFalse())
+		})
 	})
 
 	Describe("GET /", func() {
@@ -374,6 +451,22 @@ var _ = Describe("Web Server", func() {
 			Expect(body).To(ContainSubstring(`hx-post="/api/auto-profile"`))
 			Expect(body).To(ContainSubstring(`hx-target="#settings-controls"`))
 		})
+
+		It("shows the effective start threshold and minimum charge power for the surplus profile", func() {
+			ctrl.status.AutoProfile = config.AutoProfileSurplus
+			ctrl.status.StartThresholdW = 5720
+			ctrl.status.ConfiguredStartThresholdW = 1400
+			ctrl.status.MinChargePowerW = 5520
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/settings", nil)))
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(bodyString(resp)).To(ContainSubstring("Starts charging at 5720 W surplus — the car needs at least 5520 W."))
+		})
+
+		It("does not show the surplus-profile line for a latch profile", func() {
+			ctrl.status.AutoProfile = config.AutoProfilePowerLatch
+			resp := doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, "/partials/settings", nil)))
+			Expect(bodyString(resp)).NotTo(ContainSubstring("Starts charging at"))
+		})
 	})
 
 	Describe("GET /partials/status", func() {
@@ -425,6 +518,73 @@ var _ = Describe("Web Server", func() {
 			resp := doRequest(srv, httptest.NewRequest(http.MethodGet, "/partials/controls", nil))
 			body := bodyString(resp)
 			Expect(body).To(ContainSubstring("95"))
+		})
+	})
+
+	Describe("new-feature markup", func() {
+		get := func(path string) string {
+			return bodyString(doRequest(srv, enRequest(httptest.NewRequest(http.MethodGet, path, nil))))
+		}
+
+		It("renders the max-current form bounded by the accepted range and showing the limit", func() {
+			ctrl.status.MinCurrentA = 6
+			ctrl.status.MaxCurrentCeilingA = 16
+			ctrl.status.MaxCurrentA = 10
+			body := get("/partials/controls")
+			Expect(body).To(ContainSubstring(`hx-post="/api/max-current"`))
+			Expect(body).To(ContainSubstring(`name="amps" min="6" max="16"`))
+			Expect(body).To(ContainSubstring(`value="10"`))
+			Expect(body).To(ContainSubstring("limit: 10 A"))
+			Expect(body).To(ContainSubstring(`hx-vals='{"amps":"0"}'`))
+		})
+
+		It("shows no limit and no clear button when unlimited", func() {
+			ctrl.status.MinCurrentA = 6
+			ctrl.status.MaxCurrentCeilingA = 16
+			body := get("/partials/controls")
+			Expect(body).To(ContainSubstring("no wha limit"))
+			Expect(body).NotTo(ContainSubstring(`hx-vals='{"amps":"0"}'`))
+		})
+
+		It("shows the stalled alert only when stalled", func() {
+			for _, p := range []string{"/partials/status", "/partials/control-status"} {
+				Expect(get(p)).NotTo(ContainSubstring("Charging stalled"))
+			}
+			ctrl.status.Stalled = true
+			ctrl.status.StalledSince = time.Now().Add(-4 * time.Minute)
+			ctrl.status.StallRecoveryActive = true
+			ctrl.status.Snapshot.ChargerStatusReason = evcc.StringMetric{Value: "waitingforauthorization", Seen: true}
+			for _, p := range []string{"/partials/status", "/partials/control-status"} {
+				body := get(p)
+				Expect(body).To(ContainSubstring("Charging stalled"))
+				Expect(body).To(ContainSubstring("waitingforauthorization"))
+				Expect(body).To(ContainSubstring("pausing charging briefly"))
+			}
+		})
+
+		It("shows the estimated SoC label only when flagged", func() {
+			for _, p := range []string{"/partials/status", "/partials/control-status"} {
+				Expect(get(p)).NotTo(ContainSubstring("data-soc-estimated"))
+			}
+			ctrl.status.VehicleSoCEstimated = true
+			ctrl.status.VehicleSoCChangedAt = time.Now().Add(-20 * time.Minute)
+			for _, p := range []string{"/partials/status", "/partials/control-status"} {
+				Expect(get(p)).To(ContainSubstring("data-soc-estimated"))
+			}
+		})
+
+		It("binds the start-threshold input to the configured value and hints when floored", func() {
+			ctrl.status.AutoProfile = config.AutoProfilePowerLatch
+			ctrl.status.ConfiguredStartThresholdW = 1400
+			ctrl.status.StartThresholdW = 5720
+			ctrl.status.MinChargePowerW = 5520
+			body := get("/partials/settings")
+			Expect(body).To(ContainSubstring(`value="1400"`))
+			Expect(body).NotTo(ContainSubstring(`value="5720"`))
+			Expect(body).To(ContainSubstring("Effective start threshold 5720 W"))
+
+			ctrl.status.StartThresholdW = 1400
+			Expect(get("/partials/settings")).NotTo(ContainSubstring("Effective start threshold"))
 		})
 	})
 
@@ -710,6 +870,172 @@ var _ = Describe("Web Server", func() {
 
 			resp := doRequest(srv, req)
 			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+	})
+
+	Describe("POST /api/max-current", func() {
+		It("sets the limit from a form body and returns JSON ok without htmx", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader("amps=8"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.maxCurrentCalled).To(BeTrue())
+			Expect(ctrl.maxCurrentValue).To(Equal(8))
+			Expect(bodyString(resp)).To(MatchJSON(`{"ok":true}`))
+		})
+
+		It("accepts a JSON body", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader(`{"amps":10}`))
+			req.Header.Set("Content-Type", "application/json")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.maxCurrentValue).To(Equal(10))
+		})
+
+		DescribeTable("returns 400 without calling the controller when the amps key is missing",
+			func(contentType, body string) {
+				req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader(body))
+				req.Header.Set("Content-Type", contentType)
+
+				resp := doRequest(srv, req)
+				Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+				Expect(ctrl.maxCurrentCalled).To(BeFalse())
+			},
+			Entry("empty JSON object", "application/json", `{}`),
+			Entry("misspelled JSON key", "application/json", `{"amp":8}`),
+			Entry("JSON null", "application/json", `{"amps":null}`),
+			Entry("empty form body", "application/x-www-form-urlencoded", ``),
+			Entry("misspelled form key", "application/x-www-form-urlencoded", `amp=8`),
+		)
+
+		It("treats a present-but-empty form value (the UI's empty input) as clear", func() {
+			ctrl.maxCurrentValue = -1
+			req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader("amps="))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.maxCurrentCalled).To(BeTrue())
+			Expect(ctrl.maxCurrentValue).To(Equal(0))
+		})
+
+		It("passes amps=0 through so the controller clears the limit", func() {
+			ctrl.maxCurrentValue = -1
+			req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader("amps=0"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(ctrl.maxCurrentCalled).To(BeTrue())
+			Expect(ctrl.maxCurrentValue).To(Equal(0))
+		})
+
+		It("returns the refreshed controls partial for htmx requests", func() {
+			req := enRequest(httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader("amps=8")))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			req.Header.Set("HX-Request", "true")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			body := bodyString(resp)
+			Expect(body).NotTo(ContainSubstring("<!DOCTYPE html>"))
+			Expect(body).To(ContainSubstring("Override"))
+		})
+
+		It("returns 400 for a non-numeric amps value without calling the controller", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader("amps=lots"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+			Expect(ctrl.maxCurrentCalled).To(BeFalse())
+		})
+
+		It("returns 400 for an out-of-range limit (ErrInvalidMaxCurrent)", func() {
+			ctrl.maxCurrentErr = fmt.Errorf("%w 40 A", controller.ErrInvalidMaxCurrent)
+			req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader("amps=40"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+		})
+
+		It("returns 500 when persisting the limit fails", func() {
+			ctrl.maxCurrentErr = fmt.Errorf("persist max current: disk full")
+			req := httptest.NewRequest(http.MethodPost, "/api/max-current", strings.NewReader("amps=8"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+			resp := doRequest(srv, req)
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+	})
+
+	Describe("cross-site request forgery guard on /api", func() {
+		// chargePower posts a state-changing request with the given extra headers.
+		chargePower := func(host string, headers map[string]string) int {
+			GinkgoHelper()
+			req := httptest.NewRequest(http.MethodPost, "/api/charge-power", strings.NewReader("power=now"))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if host != "" {
+				req.Host = host
+			}
+			for k, v := range headers {
+				req.Header.Set(k, v)
+			}
+			resp := doRequest(srv, req)
+			_ = resp.Body.Close()
+			return resp.StatusCode
+		}
+
+		DescribeTable("rejects cross-site state changes with 403 before the controller is touched",
+			func(headers map[string]string) {
+				Expect(chargePower("wha.local", headers)).To(Equal(http.StatusForbidden))
+				Expect(ctrl.chargePowerCalled).To(BeFalse())
+			},
+			Entry("Sec-Fetch-Site: cross-site", map[string]string{"Sec-Fetch-Site": "cross-site"}),
+			Entry("Sec-Fetch-Site: cross-site even with a matching Origin",
+				map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "https://wha.local"}),
+			Entry("foreign Origin", map[string]string{"Origin": "https://evil.example"}),
+			Entry("foreign Origin on another port", map[string]string{"Origin": "https://wha.local:8443"}),
+			Entry("opaque Origin null", map[string]string{"Origin": "null"}),
+		)
+
+		DescribeTable("allows same-origin and header-less clients",
+			func(host string, headers map[string]string) {
+				Expect(chargePower(host, headers)).To(Equal(http.StatusOK))
+				Expect(ctrl.chargePowerCalled).To(BeTrue())
+			},
+			Entry("curl / scripts: no Origin, no Sec-Fetch-Site", "wha.local", map[string]string{}),
+			Entry("same-origin htmx POST through Caddy (Host passed through)", "wha.local",
+				map[string]string{"Origin": "https://wha.local", "Sec-Fetch-Site": "same-origin", "HX-Request": "true"}),
+			Entry("Origin host matching case-insensitively", "wha.local",
+				map[string]string{"Origin": "https://WHA.local"}),
+			Entry("LAN IP with explicit port", "192.168.1.20:8080",
+				map[string]string{"Origin": "http://192.168.1.20:8080", "Sec-Fetch-Site": "same-origin"}),
+			Entry("a proxy that rewrites Host but sets X-Forwarded-Host", "wha:8080",
+				map[string]string{"Origin": "https://wha.local", "X-Forwarded-Host": "wha.local"}),
+			Entry("Sec-Fetch-Site: none (typed/bookmarked navigation)", "wha.local",
+				map[string]string{"Sec-Fetch-Site": "none"}),
+		)
+
+		It("does not block reads", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/status", nil)
+			req.Header.Set("Sec-Fetch-Site", "cross-site")
+			req.Header.Set("Origin", "https://evil.example")
+			Expect(doRequest(srv, req).StatusCode).To(Equal(http.StatusOK))
+		})
+
+		It("guards every state-changing /api route, e.g. the override and max-current", func() {
+			for _, path := range []string{"/api/override", "/api/max-current", "/api/auto-profile", "/api/update/apply"} {
+				req := httptest.NewRequest(http.MethodPost, path, strings.NewReader("mode=on&amps=8"))
+				req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+				req.Header.Set("Origin", "https://evil.example")
+				Expect(doRequest(srv, req).StatusCode).To(Equal(http.StatusForbidden), path)
+			}
+			Expect(ctrl.overrideCalled).To(BeFalse())
+			Expect(ctrl.maxCurrentCalled).To(BeFalse())
 		})
 	})
 

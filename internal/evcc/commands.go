@@ -24,6 +24,14 @@ func (c *Client) SetLimitSoC(pct int) error {
 	return c.publish(c.topics.LimitSoCSet, strconv.Itoa(pct))
 }
 
+// SetMaxCurrent publishes the loadpoint max charge current (amps) to the
+// camelCase "maxCurrent/set" topic. evcc persists it and silently rejects a
+// value below its minCurrent. Callers own the safety clamp (the controller
+// never passes a value above control.maxCurrentCeilingA).
+func (c *Client) SetMaxCurrent(amps int) error {
+	return c.publish(c.topics.MaxCurrentSet, strconv.Itoa(amps))
+}
+
 func (c *Client) publish(topic, payload string) error {
 	tok := c.mqtt.Publish(topic, qos, false, payload)
 	if !tok.WaitTimeout(publishTimeout) {

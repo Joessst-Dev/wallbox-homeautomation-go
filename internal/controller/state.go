@@ -157,6 +157,11 @@ type ControlState struct {
 	// profile name. A missing/zero entry falls back to cfg.SoCCap. Only latch
 	// profiles ever get an entry.
 	TargetSoC map[string]int
+	// MaxCurrentA is the operator's runtime max charge-current limit in amps,
+	// published to evcc's maxCurrent. 0 means "no wha limit" (nothing is
+	// published). It never feeds Decide; it rides along here because it is
+	// operator-set, persisted runtime state like the fields above.
+	MaxCurrentA int
 }
 
 // latchOverrides resolves the effective auto-charge profile (cs.AutoProfile,
@@ -186,11 +191,14 @@ type Inputs struct {
 	// not use this; the SoC cap is already gated by the Ready/Seen path.
 	VehicleSoCKnown bool
 	Charging        bool
-	Connected       bool // true = a vehicle is plugged into the loadpoint
-	Ready           bool // all required metrics seen fresh at least once
-	Stale           bool // a required metric is stale OR the broker is disconnected
-	Override        Override
-	OverrideUntil   time.Time // zero value = no expiry
+	// Enabled mirrors evcc's loadpoint "enabled" flag: evcc has commanded the
+	// charger on. Used only by stall detection, never by Decide.
+	Enabled       bool
+	Connected     bool // true = a vehicle is plugged into the loadpoint
+	Ready         bool // all required metrics seen fresh at least once
+	Stale         bool // a required metric is stale OR the broker is disconnected
+	Override      Override
+	OverrideUntil time.Time // zero value = no expiry
 	// OverrideCapBypass lifts the SoC cap while a ForceOn override is active.
 	OverrideCapBypass bool
 	// OverrideCapBypassSoC is the operator-chosen target SoC for cap-bypass charging.
@@ -207,6 +215,14 @@ type Inputs struct {
 	// TargetSoC overrides cfg.SoCCap as the stop target for the active profile;
 	// zero falls back to cfg.SoCCap. See ControlState.TargetSoC.
 	TargetSoC int
+	// EffectiveMinCurrentA is evcc's effectiveMinCurrent in amps; 0 means evcc
+	// has not published it, so MinChargePowerW falls back to cfg.MinCurrentA.
+	EffectiveMinCurrentA float64
+	// PhasesConfigured is evcc's phasesConfigured, meaningful only when
+	// PhasesConfiguredKnown is true; 0 then means automatic 1p/3p switching.
+	// Unknown falls back to cfg.Phases (see MinChargePowerW).
+	PhasesConfigured      int
+	PhasesConfiguredKnown bool
 }
 
 // Timers carries the dwell bookkeeping between decisions.

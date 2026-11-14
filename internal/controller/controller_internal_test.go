@@ -17,13 +17,43 @@ import (
 
 // --- fakes ---------------------------------------------------------------
 
-// fakeCommander records SetMode / SetLimitSoC calls and can be told to fail.
+// fakeCommander records SetMode / SetLimitSoC / SetMaxCurrent calls and can be
+// told to fail.
 type fakeCommander struct {
 	mu         sync.Mutex
 	modes      []string
 	limitCalls int
 	limits     []int
 	failLimit  bool
+
+	maxCurrentCalls int
+	maxCurrents     []int
+	failMaxCurrent  bool
+}
+
+func (f *fakeCommander) SetMaxCurrent(amps int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.maxCurrentCalls++
+	if f.failMaxCurrent {
+		return errFake
+	}
+	f.maxCurrents = append(f.maxCurrents, amps)
+	return nil
+}
+
+// publishedMaxCurrents returns a copy of every successfully published maxCurrent.
+func (f *fakeCommander) publishedMaxCurrents() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int(nil), f.maxCurrents...)
+}
+
+// publishedModes returns a copy of every published mode, in order.
+func (f *fakeCommander) publishedModes() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.modes...)
 }
 
 func (f *fakeCommander) SetMode(mode string) error {
@@ -272,6 +302,11 @@ var _ = Describe("Controller.tick side effects", func() {
 		cfg = config.Default().Control
 		cfg.StartDwell = 0 // start charging the moment surplus is sufficient
 		cfg.StopDwell = 0
+		// Single-phase 6 A: keeps the min-charge-power floor (1380 W) below the
+		// 1400 W start threshold so surplus fixtures behave as written.
+		cfg.MinCurrentA = 6
+		cfg.Phases = 1
+		cfg.StartMarginW = 0
 		cmd = &fakeCommander{}
 		snaps = &fakeSnaps{}
 		rec = &fakeRecorder{}

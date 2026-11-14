@@ -108,3 +108,81 @@ var _ = Describe("InputsFromSnapshot", func() {
 		Expect(controller.Surplus(in)).To(Equal(3000.0))
 	})
 })
+
+var _ = Describe("InputsFromSnapshot (min-charge-power and stall inputs)", func() {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	cfg := config.Default().Control
+	auto := controller.ControlState{Override: controller.OverrideAuto}
+
+	It("leaves the evcc-derived floor inputs unset until evcc publishes them", func() {
+		in := controller.InputsFromSnapshot(now, evcc.Snapshot{}, cfg, auto)
+		Expect(in.EffectiveMinCurrentA).To(BeZero())
+		Expect(in.PhasesConfiguredKnown).To(BeFalse())
+		Expect(in.Enabled).To(BeFalse())
+	})
+
+	It("plumbs effectiveMinCurrent, phasesConfigured, and enabled through", func() {
+		s := evcc.Snapshot{
+			EffectiveMinCurrent: evcc.FloatMetric{Value: 6, At: now, Seen: true},
+			PhasesConfigured:    evcc.FloatMetric{Value: 1, At: now, Seen: true},
+			Enabled:             evcc.BoolMetric{Value: true, At: now, Seen: true},
+		}
+		in := controller.InputsFromSnapshot(now, s, cfg, auto)
+		Expect(in.EffectiveMinCurrentA).To(Equal(6.0))
+		Expect(in.PhasesConfigured).To(Equal(1))
+		Expect(in.PhasesConfiguredKnown).To(BeTrue())
+		Expect(in.Enabled).To(BeTrue())
+	})
+
+	It("keeps a published phasesConfigured of 0 (automatic switching) distinguishable from unset", func() {
+		s := evcc.Snapshot{PhasesConfigured: evcc.FloatMetric{Value: 0, At: now, Seen: true}}
+		in := controller.InputsFromSnapshot(now, s, cfg, auto)
+		Expect(in.PhasesConfigured).To(Equal(0))
+		Expect(in.PhasesConfiguredKnown).To(BeTrue())
+	})
+
+	It("does not freshness-gate the floor inputs (they are retained evcc settings)", func() {
+		s := evcc.Snapshot{EffectiveMinCurrent: evcc.FloatMetric{Value: 6, At: now.Add(-24 * time.Hour), Seen: true}}
+		in := controller.InputsFromSnapshot(now, s, cfg, auto)
+		Expect(in.EffectiveMinCurrentA).To(Equal(6.0))
+	})
+})
+
+var _ = Describe("VehicleSoCEstimated", func() {
+	now := time.Date(2026, 6, 28, 12, 0, 0, 0, time.UTC)
+	soc := func(changedAgo time.Duration) evcc.FloatMetric {
+		return evcc.FloatMetric{Value: 55, At: now, ChangedAt: now.Add(-changedAgo), Seen: true}
+	}
+
+	It("uses a 5 minute threshold", func() {
+		Expect(controller.SoCEstimatedAfter).To(Equal(5 * time.Minute))
+	})
+
+	DescribeTable("flags an unchanged SoC while charging as an estimate",
+		func(charging bool, m evcc.FloatMetric, expected bool) {
+			Expect(controller.VehicleSoCEstimated(now, charging, m)).To(Equal(expected))
+		},
+		Entry("charging, changed 20m ago → estimated", true, soc(20*time.Minute), true),
+		Entry("charging, changed just over 5m ago → estimated", true, soc(controller.SoCEstimatedAfter+time.Second), true),
+		Entry("charging, changed exactly 5m ago → not yet", true, soc(controller.SoCEstimatedAfter), false),
+		Entry("charging, changed 1m ago → fresh", true, soc(time.Minute), false),
+		Entry("not charging, changed hours ago → not an estimate (nothing is moving)", false, soc(3*time.Hour), false),
+		Entry("charging, never received → not flagged", true, evcc.FloatMetric{}, false),
+		Entry("charging, seen but no ChangedAt → not flagged", true, evcc.FloatMetric{Value: 55, At: now, Seen: true}, false),
+	)
+
+	It("never feeds staleness: an hours-old SoC keeps the inputs fresh", func() {
+		cfg := config.Default().Control
+		s := evcc.Snapshot{
+			BrokerConnected: true,
+			Grid:            evcc.FloatMetric{At: now, Seen: true},
+			PV:              evcc.FloatMetric{At: now, Seen: true},
+			VehicleSoC:      soc(3 * time.Hour),
+			Connected:       evcc.BoolMetric{Value: true, At: now, Seen: true},
+			Charging:        evcc.BoolMetric{Value: true, At: now, Seen: true},
+		}
+		in := controller.InputsFromSnapshot(now, s, cfg, controller.ControlState{Override: controller.OverrideAuto})
+		Expect(in.Stale).To(BeFalse())
+		Expect(controller.VehicleSoCEstimated(now, in.Charging, s.VehicleSoC)).To(BeTrue())
+	})
+})

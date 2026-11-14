@@ -47,8 +47,15 @@ type StatusVM struct {
 	AutoProfilePowerLatch   bool   `json:"autoProfilePowerLatch"`
 	AutoProfileSurplusLatch bool   `json:"autoProfileSurplusLatch"`
 	AutoProfileIsLatch      bool   `json:"autoProfileIsLatch"`
-	// StartThresholdW is the effective latch start threshold in whole watts.
-	StartThresholdW int `json:"startThresholdW"`
+	// StartThresholdW is the effective start threshold in whole watts, after
+	// the min-charge-power floor. ConfiguredStartThresholdW is the operator's
+	// value before the floor, MinChargePowerW the minimum power the loadpoint can
+	// hold, and StartThresholdFloored is true when the floor lifted the
+	// configured value.
+	StartThresholdW           int  `json:"startThresholdW"`
+	ConfiguredStartThresholdW int  `json:"configuredStartThresholdW"`
+	MinChargePowerW           int  `json:"minChargePowerW"`
+	StartThresholdFloored     bool `json:"startThresholdFloored"`
 	// TargetSoC is the effective stop target (10 % steps) for the active profile.
 	TargetSoC int `json:"targetSoC"`
 	// SoCCap/SoCMax are surfaced so the template can label the cap-bypass control.
@@ -57,6 +64,29 @@ type StatusVM struct {
 	SoCCap        int `json:"socCap"`
 	SoCMax        int `json:"socMax"`
 	SoCCapPlusOne int `json:"socCapPlusOne"`
+
+	// MaxCurrentA is the operator's max charge-current limit in amps (0 = wha
+	// never set one). MaxCurrentLimited is true only for an actual restriction
+	// below the ceiling: a cleared limit is held at the ceiling, which the UI
+	// shows as "no wha limit".
+	// MinCurrentA..MaxCurrentCeilingA is the range the server accepts.
+	// EVCCMaxCurrentA is the maxCurrent evcc currently reports (0 = unknown).
+	MaxCurrentA        int  `json:"maxCurrentA"`
+	MaxCurrentLimited  bool `json:"maxCurrentLimited"`
+	MinCurrentA        int  `json:"minCurrentA"`
+	MaxCurrentCeilingA int  `json:"maxCurrentCeilingA"`
+	EVCCMaxCurrentA    int  `json:"evccMaxCurrentA"`
+
+	// Stalled is true while the loadpoint is flagged stalled (charging wanted
+	// and enabled, but no power flowing). StalledSince is the RFC3339 start of
+	// the stall and StalledAgo its relative age; StallRecoveryActive is true
+	// during wha's one-time recovery off pulse. ChargerStatusReason is evcc's
+	// raw charger status reason, for display.
+	Stalled             bool   `json:"stalled"`
+	StalledSince        string `json:"stalledSince,omitempty"`
+	StalledAgo          string `json:"stalledAgo,omitempty"`
+	StallRecoveryActive bool   `json:"stallRecoveryActive"`
+	ChargerStatusReason string `json:"chargerStatusReason,omitempty"`
 
 	SurplusW  int    `json:"surplusW"`
 	SurplusKW string `json:"surplusKW"`
@@ -75,6 +105,13 @@ type StatusVM struct {
 
 	BatterySoC int `json:"batterySoC"`
 	VehicleSoC int `json:"vehicleSoC"`
+	// VehicleSoCChangedAt is the RFC3339 time the SoC value last changed and
+	// VehicleSoCChangedAgo its relative age. VehicleSoCEstimated is true while
+	// charging with an SoC unchanged for longer than
+	// controller.SoCEstimatedAfter (display only).
+	VehicleSoCChangedAt  string `json:"vehicleSoCChangedAt,omitempty"`
+	VehicleSoCChangedAgo string `json:"vehicleSoCChangedAgo,omitempty"`
+	VehicleSoCEstimated  bool   `json:"vehicleSoCEstimated"`
 
 	Charging  bool `json:"charging"`
 	Connected bool `json:"connected"`
@@ -110,16 +147,28 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 		ChargePower:    v.ChargePower,
 		ChargePowerNow: v.ChargePower == config.EnableModeNow,
 
-		AutoProfile:             v.AutoProfile,
-		AutoProfilePowerLatch:   v.AutoProfile == config.AutoProfilePowerLatch,
-		AutoProfileSurplusLatch: v.AutoProfile == config.AutoProfileSurplusLatch,
-		AutoProfileIsLatch:      v.AutoProfile != config.AutoProfileSurplus,
-		StartThresholdW:         watts(v.StartThresholdW),
-		TargetSoC:               v.TargetSoC,
+		AutoProfile:               v.AutoProfile,
+		AutoProfilePowerLatch:     v.AutoProfile == config.AutoProfilePowerLatch,
+		AutoProfileSurplusLatch:   v.AutoProfile == config.AutoProfileSurplusLatch,
+		AutoProfileIsLatch:        v.AutoProfile != config.AutoProfileSurplus,
+		StartThresholdW:           watts(v.StartThresholdW),
+		ConfiguredStartThresholdW: watts(v.ConfiguredStartThresholdW),
+		MinChargePowerW:           watts(v.MinChargePowerW),
+		StartThresholdFloored:     v.StartThresholdW > v.ConfiguredStartThresholdW,
+		TargetSoC:                 v.TargetSoC,
 
 		SoCCap:        v.SoCCap,
 		SoCMax:        v.SoCMax,
 		SoCCapPlusOne: v.SoCCap + 1,
+
+		MaxCurrentA:        v.MaxCurrentA,
+		MaxCurrentLimited:  v.MaxCurrentA > 0 && v.MaxCurrentA < v.MaxCurrentCeilingA,
+		MinCurrentA:        v.MinCurrentA,
+		MaxCurrentCeilingA: v.MaxCurrentCeilingA,
+
+		Stalled:             v.Stalled,
+		StallRecoveryActive: v.StallRecoveryActive,
+		VehicleSoCEstimated: v.VehicleSoCEstimated,
 
 		SurplusW:  watts(v.Surplus),
 		SurplusKW: kw(v.Surplus),
@@ -150,6 +199,20 @@ func newStatusVM(now time.Time, v controller.StatusView) StatusVM {
 
 	if !v.OverrideUntil.IsZero() {
 		vm.OverrideUntil = v.OverrideUntil.UTC().Format(time.RFC3339)
+	}
+	if snap.MaxCurrent.Seen {
+		vm.EVCCMaxCurrentA = int(math.Round(snap.MaxCurrent.Value))
+	}
+	if snap.ChargerStatusReason.Seen {
+		vm.ChargerStatusReason = snap.ChargerStatusReason.Value
+	}
+	if v.Stalled && !v.StalledSince.IsZero() {
+		vm.StalledSince = v.StalledSince.UTC().Format(time.RFC3339)
+		vm.StalledAgo = humanizeAgo(now.Sub(v.StalledSince))
+	}
+	if !v.VehicleSoCChangedAt.IsZero() {
+		vm.VehicleSoCChangedAt = v.VehicleSoCChangedAt.UTC().Format(time.RFC3339)
+		vm.VehicleSoCChangedAgo = humanizeAgo(now.Sub(v.VehicleSoCChangedAt))
 	}
 	if !v.UpdatedAt.IsZero() {
 		vm.HasUpdated = true

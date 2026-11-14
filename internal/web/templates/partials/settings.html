@@ -53,12 +53,15 @@
         <span>{{ t .Lang "controls.start_threshold_label" }}</span>
         <span class="flex items-center gap-1.5">
           <input type="number" name="startThresholdW" min="100" step="100" inputmode="numeric"
-                 value="{{.StartThresholdW}}"
+                 value="{{.ConfiguredStartThresholdW}}"
                  hx-post="/api/start-threshold" hx-trigger="change" hx-target="#settings-controls" hx-swap="innerHTML"
                  class="w-20 rounded-lg border border-slate-200 bg-white px-2 py-2 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
           <span>W</span>
         </span>
       </label>
+      {{if .StartThresholdFloored}}
+      <p class="text-amber-700 dark:text-amber-300">{{ t .Lang "controls.start_threshold_floored" .StartThresholdW .MinChargePowerW }}</p>
+      {{end}}
       <label class="flex items-center justify-between gap-3 text-slate-500 dark:text-slate-400">
         <span>{{ t .Lang "controls.target_soc_label" }}</span>
         <span class="flex items-center gap-1.5">
@@ -70,6 +73,11 @@
         </span>
       </label>
     </div>
+    {{else}}
+    {{- /* Surplus profile: no tunable threshold, but show the effective start
+           threshold (floored at the car's minimum charge power) so a dashboard
+           waiting on "surplus below start" explains itself. */ -}}
+    <p class="mt-1.5 text-xs text-slate-400 dark:text-slate-500 tabular-nums">{{ t .Lang "controls.start_threshold_surplus" .StartThresholdW .MinChargePowerW }}</p>
     {{end}}
   </div>
 </section>

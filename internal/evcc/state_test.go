@@ -76,4 +76,76 @@ var _ = Describe("Store.Apply", func() {
 		Expect(store.Apply(t.VehicleSoC, "55", now)).To(BeTrue())
 		Expect(store.Snapshot().VehicleSoC.Value).To(Equal(55.0))
 	})
+
+	Describe("FloatMetric.ChangedAt", func() {
+		It("is set on first receipt", func() {
+			Expect(store.Apply(t.VehicleSoC, "55", now)).To(BeTrue())
+			Expect(store.Snapshot().VehicleSoC.ChangedAt).To(Equal(now))
+		})
+
+		It("does not move when evcc re-sends the same value, while At does", func() {
+			Expect(store.Apply(t.VehicleSoC, "55", now)).To(BeTrue())
+			later := now.Add(10 * time.Minute)
+			Expect(store.Apply(t.VehicleSoC, " 55 ", later)).To(BeTrue())
+
+			soc := store.Snapshot().VehicleSoC
+			Expect(soc.At).To(Equal(later))
+			Expect(soc.ChangedAt).To(Equal(now))
+		})
+
+		It("moves when the value changes", func() {
+			Expect(store.Apply(t.VehicleSoC, "55", now)).To(BeTrue())
+			later := now.Add(10 * time.Minute)
+			Expect(store.Apply(t.VehicleSoC, "56", later)).To(BeTrue())
+			Expect(store.Snapshot().VehicleSoC.ChangedAt).To(Equal(later))
+		})
+
+		It("is untouched by an unparseable payload", func() {
+			Expect(store.Apply(t.VehicleSoC, "55", now)).To(BeTrue())
+			Expect(store.Apply(t.VehicleSoC, "n/a", now.Add(time.Minute))).To(BeFalse())
+			soc := store.Snapshot().VehicleSoC
+			Expect(soc.Value).To(Equal(55.0))
+			Expect(soc.ChangedAt).To(Equal(now))
+		})
+	})
+
+	Describe("charge-power floor, stall, and max-current topics", func() {
+		It("uses the camelCase evcc topic names", func() {
+			Expect(t.EffectiveMinCurrent).To(Equal("evcc/loadpoints/1/effectiveMinCurrent"))
+			Expect(t.PhasesConfigured).To(Equal("evcc/loadpoints/1/phasesConfigured"))
+			Expect(t.PhasesActive).To(Equal("evcc/loadpoints/1/phasesActive"))
+			Expect(t.ChargerStatusReason).To(Equal("evcc/loadpoints/1/chargerStatusReason"))
+			Expect(t.MaxCurrent).To(Equal("evcc/loadpoints/1/maxCurrent"))
+			Expect(t.MaxCurrentSet).To(Equal("evcc/loadpoints/1/maxCurrent/set"))
+		})
+
+		It("parses effectiveMinCurrent, phasesConfigured, phasesActive, and maxCurrent", func() {
+			Expect(store.Apply(t.EffectiveMinCurrent, "8", now)).To(BeTrue())
+			Expect(store.Apply(t.PhasesConfigured, "0", now)).To(BeTrue())
+			Expect(store.Apply(t.PhasesActive, "3", now)).To(BeTrue())
+			Expect(store.Apply(t.MaxCurrent, "16", now)).To(BeTrue())
+
+			snap := store.Snapshot()
+			Expect(snap.EffectiveMinCurrent).To(Equal(evcc.FloatMetric{Value: 8, At: now, ChangedAt: now, Seen: true}))
+			// 0 (automatic phase switching) is a genuine, seen value — not "unset".
+			Expect(snap.PhasesConfigured.Seen).To(BeTrue())
+			Expect(snap.PhasesConfigured.Value).To(Equal(0.0))
+			Expect(snap.PhasesActive.Value).To(Equal(3.0))
+			Expect(snap.MaxCurrent.Value).To(Equal(16.0))
+		})
+
+		It("ignores unparseable numeric payloads", func() {
+			Expect(store.Apply(t.EffectiveMinCurrent, "", now)).To(BeFalse())
+			Expect(store.Apply(t.PhasesConfigured, "auto", now)).To(BeFalse())
+			snap := store.Snapshot()
+			Expect(snap.EffectiveMinCurrent.Seen).To(BeFalse())
+			Expect(snap.PhasesConfigured.Seen).To(BeFalse())
+		})
+
+		It("stores chargerStatusReason as a display string", func() {
+			Expect(store.Apply(t.ChargerStatusReason, "waitingforauthorization\n", now)).To(BeTrue())
+			Expect(store.Snapshot().ChargerStatusReason).To(Equal(
+				evcc.StringMetric{Value: "waitingforauthorization", At: now, Seen: true}))
+		})
+	})
 })

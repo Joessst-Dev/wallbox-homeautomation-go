@@ -355,6 +355,38 @@ func (s *Server) handleTargetSoC(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"ok": true})
 }
 
+// maxCurrentRequest is the accepted body for POST /api/max-current (JSON or
+// form). Amps is whole amperes. It is a pointer so a missing key (e.g. `{}` or
+// a misspelled field) is a 400 instead of silently clearing the limit; a
+// present-but-empty form value (the UI's empty input) or 0 clears it.
+type maxCurrentRequest struct {
+	Amps *int `json:"amps" form:"amps"`
+}
+
+// handleMaxCurrent sets (or, with amps=0, clears) the persistent max
+// charge-current limit wha publishes to evcc. For htmx requests it returns the
+// refreshed controls partial; otherwise {"ok":true}.
+func (s *Server) handleMaxCurrent(c *fiber.Ctx) error {
+	var req maxCurrentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, "invalid max-current body")
+	}
+	if req.Amps == nil {
+		return fiber.NewError(fiber.StatusBadRequest, "amps is required (0 or empty clears the limit)")
+	}
+	if err := s.ctrl.SetMaxCurrent(*req.Amps); err != nil {
+		if errors.Is(err, controller.ErrInvalidMaxCurrent) {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+		s.log.Warn("web: set max current failed", "err", err)
+		return fiber.NewError(fiber.StatusInternalServerError, "failed to set max current")
+	}
+	if c.Get("HX-Request") != "" {
+		return s.renderControlsPartial(c)
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
 // handleUpdatePartial renders just the software-update fragment (htmx poll/
 // refresh target).
 func (s *Server) handleUpdatePartial(c *fiber.Ctx) error {

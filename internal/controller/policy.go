@@ -39,13 +39,60 @@ func effectiveProfile(in Inputs, cfg config.Control) string {
 	return cfg.AutoProfile
 }
 
-// effectiveStartThreshold returns the runtime start-threshold override for the
-// active profile, falling back to cfg.StartThresholdW when unset.
-func effectiveStartThreshold(in Inputs, cfg config.Control) float64 {
-	if in.StartThresholdW != 0 {
+// NominalVoltageV is the per-phase nominal mains voltage used to turn a charge
+// current into a charge power.
+const NominalVoltageV = 230.0
+
+// MinChargePowerW is the lowest power, in watts, the loadpoint can actually
+// hold once charging starts: current × NominalVoltageV × phases.
+//
+//   - current is evcc's effectiveMinCurrent when published (> 0), otherwise the
+//     cfg.MinCurrentA fallback.
+//   - phases is evcc's phasesConfigured when published and > 0. A published 0
+//     means automatic 1p/3p switching, where evcc starts single-phase, so 1 is
+//     used. Unpublished (or a nonsensical negative value) falls back to
+//     cfg.Phases.
+func MinChargePowerW(in Inputs, cfg config.Control) float64 {
+	current := float64(cfg.MinCurrentA)
+	if in.EffectiveMinCurrentA > 0 {
+		current = in.EffectiveMinCurrentA
+	}
+	phases := cfg.Phases
+	if in.PhasesConfiguredKnown {
+		switch {
+		case in.PhasesConfigured > 0:
+			phases = in.PhasesConfigured
+		case in.PhasesConfigured == 0:
+			phases = 1
+		}
+	}
+	return current * NominalVoltageV * float64(phases)
+}
+
+// configuredStartThreshold is the operator's start threshold before the
+// min-charge-power floor: a latch profile's runtime override when set, else
+// cfg.StartThresholdW. The default surplus profile always uses the static
+// cfg.StartThresholdW (it has no runtime override).
+func configuredStartThreshold(in Inputs, cfg config.Control) float64 {
+	if effectiveProfile(in, cfg) != config.AutoProfileSurplus && in.StartThresholdW != 0 {
 		return in.StartThresholdW
 	}
 	return cfg.StartThresholdW
+}
+
+// effectiveStartThreshold is the start threshold Decide actually applies and
+// Status reports. For the surplus and surplus_latch profiles (both triggered by
+// net surplus) it is floored at MinChargePowerW + cfg.StartMarginW: starting on
+// less surplus than the charger can hold makes evcc draw from the grid, the
+// surplus goes negative, and the controller flaps start/stop. power_latch is
+// triggered by PV production and deliberately charges at full power, so it is
+// not floored.
+func effectiveStartThreshold(in Inputs, cfg config.Control) float64 {
+	base := configuredStartThreshold(in, cfg)
+	if effectiveProfile(in, cfg) == config.AutoProfilePowerLatch {
+		return base
+	}
+	return max(base, MinChargePowerW(in, cfg)+cfg.StartMarginW)
 }
 
 // effectiveTargetSoC returns the runtime target-SoC override for the active
@@ -177,7 +224,7 @@ func Decide(now time.Time, in Inputs, st State, timers Timers, cfg config.Contro
 	if charging {
 		return decideFromCharging(now, s, timers, cfg, enable)
 	}
-	return decideFromIdle(now, s, timers, cfg, enable)
+	return decideFromIdle(now, s, effectiveStartThreshold(in, cfg), timers, cfg, enable)
 }
 
 // decideLatch implements the power_latch/surplus_latch profiles: once the
@@ -210,9 +257,10 @@ func decideLatch(now time.Time, in Inputs, st State, timers Timers, cfg config.C
 	return newDecision(StateIdle, resetTimers(), ModeOff, ReasonLatchBelowStart)
 }
 
-// decideFromIdle handles ticks where we are not currently charging.
-func decideFromIdle(now time.Time, s float64, timers Timers, cfg config.Control, enable string) Decision {
-	if s >= cfg.StartThresholdW {
+// decideFromIdle handles ticks where we are not currently charging. threshold
+// is the effective (min-charge-power floored) start threshold.
+func decideFromIdle(now time.Time, s, threshold float64, timers Timers, cfg config.Control, enable string) Decision {
+	if s >= threshold {
 		if timers.CrossedUpAt.IsZero() {
 			return newDecision(StateSurplusPending, Timers{CrossedUpAt: now}, ModeOff, ReasonSurplusDwellStart)
 		}

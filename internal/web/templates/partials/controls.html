@@ -37,6 +37,35 @@
     </p>
   </div>
 
+  {{- /* Max charge current: persistent wha limit published to evcc. An empty
+         field or 0 clears the limit; the explicit Clear button posts amps=0. */ -}}
+  <form hx-post="/api/max-current" hx-target="#controls" hx-swap="innerHTML" class="mb-3">
+    <label for="max-current-input" class="mb-1.5 flex items-center justify-between gap-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+      <span>{{ t .Lang "controls.max_current_label" }}</span>
+      <span class="tabular-nums text-slate-700 dark:text-slate-200">{{if .MaxCurrentLimited}}{{ t .Lang "controls.max_current_limit" .MaxCurrentA }}{{else}}{{ t .Lang "controls.max_current_none" }}{{end}}</span>
+    </label>
+    <div class="flex items-center gap-2">
+      <input id="max-current-input" type="number" name="amps" min="{{.MinCurrentA}}" max="{{.MaxCurrentCeilingA}}" step="1" inputmode="numeric"
+             placeholder="{{ t .Lang "controls.max_current_none" }}" value="{{if .MaxCurrentLimited}}{{.MaxCurrentA}}{{end}}"
+             aria-describedby="max-current-help"
+             class="min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-sm text-slate-900 tabular-nums focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100">
+      <span class="text-sm text-slate-500 dark:text-slate-400">A</span>
+      <button type="submit"
+              class="min-h-[44px] rounded-xl border border-emerald-500 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition active:scale-[0.97] hover:bg-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:border-emerald-500 dark:bg-emerald-500/15 dark:text-emerald-300 dark:hover:bg-emerald-500/25">
+        {{ t .Lang "controls.max_current_apply" }}
+      </button>
+      {{if .MaxCurrentLimited}}
+      <button type="button" hx-post="/api/max-current" hx-vals='{"amps":"0"}' hx-target="#controls" hx-swap="innerHTML"
+              class="min-h-[44px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition active:scale-[0.97] hover:bg-slate-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700">
+        {{ t .Lang "controls.max_current_clear" }}
+      </button>
+      {{end}}
+    </div>
+    <p id="max-current-help" class="mt-1 text-xs text-slate-400 dark:text-slate-500">
+      {{ t .Lang "controls.max_current_help" .MinCurrentA .MaxCurrentCeilingA }}{{if .EVCCMaxCurrentA}} &middot; {{ t .Lang "controls.max_current_evcc" .EVCCMaxCurrentA }}{{end}}
+    </p>
+  </form>
+
   <form hx-post="/api/override"
         hx-target="#controls"
         hx-swap="innerHTML"
