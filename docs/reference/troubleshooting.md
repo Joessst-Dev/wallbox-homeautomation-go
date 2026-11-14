@@ -99,22 +99,22 @@ Both conditions force the loadpoint to off until the connection recovers.
 
 ## Charging behaviour
 
-These come from the first field report (Sungrow SH8.0 RT + Easee Home + Renault Twingo Electric on a 16 A circuit, charger limited to 8 A in the Easee app). The causes below are the likely diagnosis; the evcc behaviours marked *observed/likely* are not verified against every evcc version.
+These come from the first field report (Sungrow SH8.0 RT + Easee Home + Renault Twingo Electric on a 16 A circuit, charger limited to 8 A in the Easee app). The causes below are the likely diagnosis; the evcc behaviour described was checked against the evcc docs and source (evcc 0.319.0), but may differ on other versions.
 
 ### Charging starts and stops repeatedly / red lamp
 
 Symptom: the loadpoint toggles between charging and paused every few minutes and the car shows a red lamp.
 
 ::: warning Single-phase install that no longer starts at 1400 W?
-The start threshold is now floored at `(effectiveMinCurrent, else control.minCurrentA) × 230 V × phases + control.startMarginW` for the surplus and `surplus_latch` profiles (not `power_latch`). With the defaults (8 A, 3 phases, 200 W) that is **5720 W** until evcc publishes its values. If your charger is single-phase, either wait until evcc reports `effectiveMinCurrent`/`phasesConfigured`, or set `control.phases: 1` and `control.minCurrentA: 6` (floor then 1580 W). If evcc publishes `phasesConfigured: 0` (automatic 1p/3p), the floor counts 1 phase.
+The start threshold is now floored at `(effectiveMinCurrent, else control.minCurrentA) × 230 V × phases + control.startMarginW` for the surplus and `surplus_latch` profiles (not `power_latch`). With the defaults (8 A, 3 phases, 200 W) that is **5720 W** until evcc publishes its values. If your charger is single-phase, either wait until evcc reports `effectiveMinCurrent`/`phasesConfigured`, or, if your charger is single-phase **and your car allows 6 A**, set `control.phases: 1` and `control.minCurrentA: 6` (floor then 1580 W). A 3-phase Renault Twingo needs 8 A, so with three phases the floor stays at 5720 W. If evcc publishes `phasesConfigured: 0` (automatic 1p/3p), the floor counts 1 phase.
 :::
 
 Likely causes, in order of how often they bite:
 
-1. **The start threshold is below evcc's minimum charge power.** evcc only enables once export reaches the loadpoint's minimum charge power (`minCurrent` × 230 V × phases) — *not* "as soon as any surplus exists", even with `enable.threshold: 0`. At 3 phases and 8 A that is about 5.5 kW. A `startThresholdW` of 1400 only fits 6 A on a single phase. `wha` now floors `startThresholdW` at `(effectiveMinCurrent, else minCurrentA) × 230 V × phases + startMarginW` (live values from evcc; `control.minCurrentA`/`control.phases` only until evcc has published them), but set `control.startThresholdW`, `control.minCurrentA` and `control.phases` to match your setup anyway.
-2. **Two gates in parallel.** evcc's own `enable`/`disable` delays run alongside `wha`'s start/stop dwells; neither replaces the other. If you see frequent cycling, increase `control.startDwell`/`control.stopDwell` and keep evcc's `disable.delay` at about 3 minutes.
-3. **Phase auto-switching.** With `phases: 0` (auto) evcc switches between 1 and 3 phases, and each switch **pauses the Easee**. Some cars react badly (red lamp, aborted session). Use a fixed phase count in `evcc.yaml`.
-4. **minCurrent equals the Easee app limit.** If the Easee app caps the charger at 8 A and evcc's `minCurrent` is 8 A, evcc can only offer exactly 8 A and cannot follow the surplus. Use `minCurrent: 6` (evcc then raises the Easee start current to 7 A, *observed/likely*) or raise the app limit.
+1. **The start threshold is below evcc's minimum charge power.** evcc only enables once export reaches the loadpoint's minimum charge power (`minCurrent` × 230 V × phases) — *not* "as soon as any surplus exists". `enable.threshold` is grid power in W (negative = export): `0` means export must reach the minimum charge power, a negative value demands extra export on top. At 3 phases and 8 A that is about 5.5 kW. A `startThresholdW` of 1400 only fits 6 A on a single phase. `wha` now floors `startThresholdW` at `(effectiveMinCurrent, else minCurrentA) × 230 V × phases + startMarginW` (live values from evcc; `control.minCurrentA`/`control.phases` only until evcc has published them), but set `control.startThresholdW`, `control.minCurrentA` and `control.phases` to match your setup anyway.
+2. **Two gates in parallel.** evcc's own `enable`/`disable` delays (defaults 1 min / 3 min) run alongside `wha`'s start/stop dwells; neither replaces the other. If you see frequent cycling, increase `control.startDwell`/`control.stopDwell` and keep evcc's `disable.delay` at about 3 minutes.
+3. **Phase auto-switching.** With `phases: 0` (auto) evcc switches between 1 and 3 phases (supported on the Easee Home); each switch writes the phase mode and then **pauses the Easee**, and per the evcc docs affects every charger on the same Easee circuit. Some cars react badly (red lamp, aborted session). Use a fixed phase count in `evcc.yaml`.
+4. **minCurrent equals the Easee app limit.** Keep evcc's vehicle `minCurrent` at the car's real minimum (the evcc Renault template documents 8 A on three phases, 10 A on older models). If the Easee app caps the charger at 8 A, evcc has exactly one possible current and cannot follow the surplus. Raise the Easee-app limit to your circuit rating (16 A) and use `wha`'s **Max charge current** setting for any temporary cap, or accept fixed 8 A charging. (The Easee driver raises start currents below 7 A to 7 A.)
 
 ### wha says charging but the wallbox is idle (stalled)
 
@@ -128,12 +128,12 @@ If it keeps happening, check the items under [Check these Easee/Renault settings
 
 ### Charge now ignores my current limit
 
-In `now` mode evcc writes the Easee **dynamic** current from its own effective max current (16 A by default). That overrides any *temporary* limit set in the Easee app; only the Easee **static** "max charger current" setting holds (*observed/likely*).
+In `now` mode evcc writes the Easee **dynamic** current from its own effective max current (16 A by default). That overrides any *temporary* or dynamic limit set in the Easee app; `now` is capped only by the Easee **static** "max charger current" set in the Easee app.
 
 Fix it in one of two ways:
 
-- Use the dashboard **Max charge current** setting ([Dashboard](/guide/dashboard#max-charge-current)); `wha` publishes it to evcc as `maxCurrent/set` and re-asserts it on reconnect. It is clamped to `control.maxCurrentCeilingA`; evcc silently rejects values below `minCurrent`.
-- Or set `maxCurrent` on the vehicle or loadpoint in `evcc.yaml`, consistent with your circuit (see `evcc.example.yaml`).
+- Use the dashboard **Max charge current** setting ([Dashboard](/guide/dashboard#max-charge-current)); `wha` publishes it to evcc as `maxCurrent/set` and re-asserts it on reconnect. It is clamped to `control.maxCurrentCeilingA`; evcc rejects values below `minCurrent` (only visible as `ERROR max current must be greater or equal than min current` in evcc's log).
+- Or set `maxCurrent` on the vehicle in `evcc.yaml`, consistent with your circuit (see `evcc.example.yaml`). A loadpoint-level `maxCurrent` key is undocumented on docs.evcc.io; prefer `wha`'s setting or the evcc UI.
 
 Also set `control.maxCurrentCeilingA` to your circuit/charger rating — evcc has no upper bound of its own.
 
@@ -152,15 +152,15 @@ The `vehicleSoc` topic is **evcc's estimate** (charged energy × 0.85 ÷ vehicle
 - **`capacity` too small** in `evcc.yaml` → the estimate overstates SoC and charging stops early. Use the usable kWh of your car (27.5 kWh is the example value for the 2026 Twingo Electric (LFP) — verify yours).
 - The Renault cloud returning stale values.
 
-The dashboard labels SoC as *estimated by evcc* while charging and the value has not changed for more than 5 minutes. To get fresher values while plugged in, you can set `soc.poll.mode: connected` with an `interval` such as `30m` on the loadpoint (see `evcc.example.yaml`); don't poll aggressively, the Renault cloud rate-limits.
+The dashboard labels SoC as *estimated by evcc* while charging and the value has not changed for more than 5 minutes. To get fresher values while plugged in, you can set `soc.poll.mode: connected` with an `interval` such as `30m` in the **loadpoint's** `soc:` block (the vehicle-level key is `cache`; see `evcc.example.yaml`); don't poll aggressively, the Renault cloud rate-limits.
 
 ### Check these Easee/Renault settings
 
 Settings outside `wha` that commonly produce idle or flapping sessions:
 
 - **Easee smart charging / schedules: off.** An app schedule or smart-charging profile can pause the charger while evcc thinks it is charging.
-- **Easee access control / RFID: off, or authorize the session.** An unauthorized charger stays idle although evcc has enabled it.
-- **Easee phase mode** matches `phases` in `evcc.yaml` (1-phase vs. 3-phase). A mismatch leads to failed starts.
+- **Easee access control: off, or authorize the session.** An unauthorized charger stays idle although evcc has enabled it. The evcc Easee template's parameter for this is `authorize`; per the evcc docs it is not compatible with RFID vehicle identification.
+- **Easee phase mode** matches `phases` in `evcc.yaml` (1-phase vs. 3-phase). A mismatch leads to failed starts. (`phases:` in YAML is deprecated in favour of the evcc UI setting but still works.)
 - **Easee max charger current** (static) is at or above evcc's `minCurrent` and at or below your circuit.
 - **Renault-side charge schedule / delayed charging: off.** A car-side schedule can refuse to start charging outside its window and produces the red lamp.
 - Do **not** set `onIdentify: mode` on the evcc vehicle — it fights `wha`'s mode control.

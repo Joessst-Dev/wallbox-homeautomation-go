@@ -38,7 +38,7 @@ evcc will not charge below its **minimum charge power**: minimum current × 230 
 You don't have to get it exactly right: `wha` floors the effective start threshold at `minCurrentA × 230 V × phases + startMarginW`. It prefers the live values evcc publishes (`effectiveMinCurrent`, `phasesConfigured`). The `minCurrentA` key is used only until evcc has published `effectiveMinCurrent`; `phases` is used only when evcc has not published `phasesConfigured`. If evcc publishes `phasesConfigured: 0` (automatic 1p/3p switching), the floor counts **one** phase, since a start is single-phase. The floor applies to the **surplus** and **surplus (latch)** profiles, not to **PV power**. A threshold below that floor can never start a charge that evcc would immediately refuse, which is what caused start/stop flapping.
 
 ::: warning Behaviour change for single-phase installs
-With the defaults (8 A, 3 phases, 200 W margin) the floor is **5720 W** until evcc publishes its values. If you relied on starting at 1400 W on a single-phase charger, set `phases: 1` and `minCurrentA: 6` (floor 1580 W), or wait until evcc reports its values.
+With the defaults (8 A, 3 phases, 200 W margin) the floor is **5720 W** until evcc publishes its values. If you relied on starting at 1400 W on a single-phase charger and your car allows 6 A, set `phases: 1` and `minCurrentA: 6` (floor 1580 W); otherwise wait until evcc reports its values. A 3-phase Renault Twingo needs 8 A, so its floor stays at 5720 W.
 :::
 
 ### Current ceiling

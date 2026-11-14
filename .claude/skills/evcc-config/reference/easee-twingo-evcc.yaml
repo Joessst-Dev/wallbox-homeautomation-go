@@ -4,8 +4,8 @@
 ## Note: the Sungrow SH-series hybrid provides grid, PV and battery from ONE Modbus
 ##       connection — three meters below share the same host/port.
 
-# Easee is a sponsor-gated driver: without a token evcc exits with
-# "sponsorship required". https://sponsor.evcc.io (trial token: docs.evcc.io/en/sponsorship)
+# The Easee driver requires a sponsor token. https://sponsor.evcc.io — or the trial token
+# at docs.evcc.io/en/sponsorship (currently expires 2026-11-23; verify before relying on it).
 sponsortoken: CHANGE_ME
 
 site:
@@ -24,34 +24,48 @@ loadpoints:
     # Phase choice (the Easee Home itself is 3-phase capable):
     #   3 = fixed three-phase (example default). Predictable, but the minimum
     #       charge power is high: 8 A x 230 V x 3 = ~5.5 kW of export needed
-    #       before evcc starts (6 A x 230 x 3 = ~4.1 kW).
-    #   1 = fixed single-phase. Starts at ~1.4-1.8 kW surplus (6-8 A x 230 V),
+    #       before evcc starts (the Twingo's real minimum is 8 A on 3 phases).
+    #   1 = fixed single-phase. Starts at ~1.4-1.8 kW surplus (6-8 A x 230 V; 6 A
+    #       only if your car allows it),
     #       best for small PV surplus; max ~3.7 kW (16 A). Needs the charger
     #       wired/configured for 1 phase.
-    #   0 = auto: evcc switches 1p/3p itself. Each switch PAUSES the Easee, and
-    #       some cars react badly (red lamp, session aborts) — prefer a fixed value.
+    #   0 = auto: evcc switches 1p/3p itself. Phase switching on the Easee Home is
+    #       supported; each switch writes the phase mode and then PAUSES the charger,
+    #       and per the evcc docs it affects every charger on the same Easee circuit.
+    #       Some cars react badly (red lamp, session aborts) — prefer a fixed value.
+    # NOTE: `phases:` in evcc.yaml is deprecated in favour of the loadpoint setting in
+    # the evcc UI, but it still works.
     phases: 3
-    mode: pv # off | now | minpv | pv — change to "now" if you have no PV/tariff control
+    # Modes: off | now | smart (evcc >= 0.316; older evcc: pv, plus minpv). evcc >= 0.316
+    # replaced minpv with the separate alwaysCharge setting (off|on|once). `mode/set`
+    # still accepts pv/minpv. Use "now" if you have no PV/tariff control.
+    mode: pv
     # evcc only enables once export reaches the loadpoint's minimum charge power
-    # (minCurrent x voltage x phases) + enable.threshold (default 0) — it is NOT
-    # "as soon as any surplus exists". The enable/disable delays below are evcc's
-    # own and run in parallel with any external controller's dwells (e.g. wha).
+    # (minCurrent x voltage x phases) — it is NOT "as soon as any surplus exists".
+    # `threshold` is grid power in W (negative = export). Enable: 0 = export must reach
+    # the minimum charge power; a NEGATIVE value demands extra export on top. Disable:
+    # only positive values act; 0 stops once surplus no longer covers the minimum.
+    # The delays (defaults: enable 1m, disable 3m) run in parallel with any external
+    # controller's dwells (e.g. wha).
     # enable:
     #   delay: 1m
     #   threshold: 0
     # disable:
     #   delay: 3m
     #   threshold: 0
-    # maxCurrent: 16 # A — circuit/charger rating, never higher. In `now` mode evcc
-    #                #     writes the Easee dynamic current from this value (16 A
-    #                #     default) and overrides temporary Easee-app limits.
-    # Optional SoC polling (default: charging). Car data is only reachable while
-    # plugged in. Do NOT set vehicle `onIdentify: mode` when an external
-    # controller (wha) owns the mode.
+    # A loadpoint-level maxCurrent/minCurrent key is undocumented on docs.evcc.io; prefer
+    # an external controller's max-current setting (wha) or the evcc UI. In `now` mode evcc
+    # writes the Easee dynamic current from its effective max current (16 A default),
+    # overriding temporary/dynamic app limits — only the static "max charger current" in
+    # the Easee app caps it.
+    # Optional SoC polling on the LOADPOINT `soc:` block (the vehicle-level key is `cache`).
+    # Default mode: charging. Car data is only reachable while plugged in. Do NOT set
+    # vehicle `onIdentify: mode` when an external controller (wha) owns the mode.
     # soc:
     #   poll:
     #     mode: connected # charging (default) | connected | always
     #     interval: 30m
+    #   estimate: true
 
 chargers:
   - name: easee_home
@@ -70,9 +84,11 @@ vehicles:
     user: CHANGE_ME # MY Renault account email
     password: CHANGE_ME # MY Renault account password
     vin: CHANGE_ME # optional but recommended: the car's VIN (starts with VF...)
-    # If the Easee app caps the charger at 8 A and minCurrent is 8 A, evcc can only
-    # ever offer 8 A and cannot follow surplus. Use minCurrent: 6 (evcc then raises
-    # the Easee start current to 7 A — observed/likely) or raise the app limit.
+    # minCurrent = the car's real minimum (Renault template: 8 A on 3 phases, 10 A on older
+    # models) — keep it. If the Easee app caps the charger at 8 A, evcc has exactly one
+    # possible current and cannot follow surplus: raise the app limit to the circuit rating
+    # (16 A) and use a controller-side max-current setting for temporary caps, or accept
+    # fixed 8 A charging. (The Easee driver raises start currents below 7 A to 7 A.)
     minCurrent: 8 # A — Twingo Electric minimum at 3 phases
     maxCurrent: 16 # A — circuit/charger rating, never higher
 
@@ -104,6 +120,9 @@ meters:
     id: 1
     host: CHANGE_ME # same IP as above
     port: 502
+    # Required by the current template for usage: battery (older docs call them optional).
+    # Live values come from input register 5627; 13051 is only what evcc writes to force
+    # battery charge/discharge.
     maxchargepower: 5000 # W — required for usage: battery, else evcc won't start
     maxdischargepower: 5000 # W — required for usage: battery
 

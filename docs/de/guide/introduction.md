@@ -30,4 +30,4 @@ Das `wha`-Web-Dashboard (Port 8080) zeigt den Live-Zustand und erlaubt es dir, d
 
 ## Verhältnis zu evcc
 
-evcc hat einen eigenen, eingebauten PV-Modus (`pv`). `wha` existiert, weil der Repo-Betreiber eine strengere, nachvollziehbare Policy-Schicht mit persistenter Historie und einem zweckgebundenen Dashboard wollte. Wenn du das Ganze von Grund auf einrichtest, lies sowohl die [evcc-Dokumentation](https://docs.evcc.io) als auch dieses Handbuch – evcc muss konfiguriert sein und funktionieren, bevor `wha` einen Mehrwert bringt.
+evcc hat einen eigenen, eingebauten PV-Modus (`pv`, seit evcc 0.316 `smart` genannt). `wha` existiert, weil der Repo-Betreiber eine strengere, nachvollziehbare Policy-Schicht mit persistenter Historie und einem zweckgebundenen Dashboard wollte. Wenn du das Ganze von Grund auf einrichtest, lies sowohl die [evcc-Dokumentation](https://docs.evcc.io) als auch dieses Handbuch – evcc muss konfiguriert sein und funktionieren, bevor `wha` einen Mehrwert bringt.

@@ -263,8 +263,9 @@ Durations accept Go syntax (`60s`, `2m`, `6h`).
 > `(effectiveMinCurrent, else control.minCurrentA) × 230 V × phases + control.startMarginW`.
 > With the defaults (8 A, 3 phases, 200 W) that is **5720 W** until evcc publishes its own values.
 > A single-phase install that relied on starting at 1400 W will not start until evcc reports
-> `effectiveMinCurrent` / `phasesConfigured`, or you set `control.phases: 1` and
-> `control.minCurrentA: 6` (floor then 1580 W). If evcc publishes `phasesConfigured: 0`
+> `effectiveMinCurrent` / `phasesConfigured`, or, if your charger is
+> single-phase and your car allows 6 A, you set `control.phases: 1` and
+> `control.minCurrentA: 6` (floor then 1580 W); a 3-phase Renault Twingo needs 8 A and stays at 5720 W. If evcc publishes `phasesConfigured: 0`
 > (automatic 1p/3p), the floor counts 1 phase.
 
 ## Safety model

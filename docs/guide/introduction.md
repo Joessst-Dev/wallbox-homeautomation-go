@@ -30,4 +30,4 @@ The `wha` web dashboard (port 8080) shows the live state and lets you override t
 
 ## Relation to evcc
 
-evcc has its own built-in PV mode (`pv`). `wha` exists because the repo owner wanted a stricter, auditable policy layer with persistent history and a purpose-built dashboard. If you're setting this up from scratch, read both the [evcc docs](https://docs.evcc.io) and this manual — evcc must be configured and working before `wha` adds value.
+evcc has its own built-in PV mode (`pv`, called `smart` since evcc 0.316). `wha` exists because the repo owner wanted a stricter, auditable policy layer with persistent history and a purpose-built dashboard. If you're setting this up from scratch, read both the [evcc docs](https://docs.evcc.io) and this manual — evcc must be configured and working before `wha` adds value.

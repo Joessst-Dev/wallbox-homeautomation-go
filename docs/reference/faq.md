@@ -43,7 +43,7 @@ In `now` mode evcc writes the Easee dynamic current from its own max current (16
 
 ## Why does wha need its own policy on top of evcc?
 
-evcc has a built-in `pv` mode that also charges on surplus. `wha` adds:
+evcc has a built-in PV mode (`pv`, renamed `smart` in evcc 0.316) that also charges on surplus. `wha` adds:
 - A stricter, auditable policy with documented priority order.
 - Persistent charge history in SQLite.
 - A purpose-built dashboard focused on the operator view (surplus, SoC, override).

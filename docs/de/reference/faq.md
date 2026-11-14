@@ -43,7 +43,7 @@ Im `now`-Modus schreibt evcc den dynamischen Easee-Strom aus seinem eigenen Maxi
 
 ## Warum braucht wha eine eigene Policy zusätzlich zu evcc?
 
-evcc hat einen eingebauten `pv`-Modus, der ebenfalls auf Überschuss lädt. `wha` ergänzt:
+evcc hat einen eingebauten PV-Modus (`pv`, seit evcc 0.316 in `smart` umbenannt), der ebenfalls auf Überschuss lädt. `wha` ergänzt:
 - Eine strengere, nachvollziehbare Policy mit dokumentierter Prioritätsreihenfolge.
 - Persistente Ladehistorie in SQLite.
 - Ein zweckgebundenes Dashboard mit Fokus auf die Betreibersicht (Überschuss, SoC, Übersteuerung).

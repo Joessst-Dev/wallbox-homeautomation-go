@@ -38,7 +38,7 @@ evcc lädt nicht unterhalb seiner **Mindestladeleistung**: minimaler Strom × 23
 Es muss nicht auf den Watt genau stimmen: `wha` hebt den effektiven Startschwellenwert auf mindestens `minCurrentA × 230 V × phases + startMarginW` an. Bevorzugt werden die Live-Werte, die evcc veröffentlicht (`effectiveMinCurrent`, `phasesConfigured`); `minCurrentA` gilt nur, bis evcc `effectiveMinCurrent` veröffentlicht hat; `phases` nur, wenn evcc `phasesConfigured` nicht veröffentlicht hat. Veröffentlicht evcc `phasesConfigured: 0` (automatische 1p/3p-Umschaltung), zählt die Untergrenze **eine** Phase, da ein Start einphasig erfolgt. Die Untergrenze gilt für die Profile **Überschuss** und **Überschuss (fest)**, nicht für **PV-Leistung**. Ein Schwellenwert unterhalb dieser Untergrenze kann so keinen Start anfordern, den evcc sofort verweigern würde – genau das verursachte das Start/Stopp-Flattern.
 
 ::: warning Verhaltensänderung für einphasige Installationen
-Mit den Standardwerten (8 A, 3 Phasen, 200 W Reserve) beträgt die Untergrenze **5720 W**, bis evcc seine Werte veröffentlicht. Hast du dich bei einer einphasigen Wallbox auf den Start bei 1400 W verlassen, setze `phases: 1` und `minCurrentA: 6` (Untergrenze 1580 W) oder warte, bis evcc seine Werte meldet.
+Mit den Standardwerten (8 A, 3 Phasen, 200 W Reserve) beträgt die Untergrenze **5720 W**, bis evcc seine Werte veröffentlicht. Hast du dich bei einer einphasigen Wallbox auf den Start bei 1400 W verlassen und dein Fahrzeug 6 A zulässt, setze `phases: 1` und `minCurrentA: 6` (Untergrenze 1580 W); andernfalls warte, bis evcc seine Werte meldet. Ein dreiphasiger Renault Twingo braucht 8 A, seine Untergrenze bleibt also bei 5720 W.
 :::
 
 ### Stromobergrenze
