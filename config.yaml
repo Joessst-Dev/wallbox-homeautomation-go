@@ -13,8 +13,19 @@ evcc:
   loadpointID: "1" # which evcc loadpoint to control (1-based)
 
 control:
-  enableMode: pv # pv = charge only on surplus (evcc modulates current); now = full power
-  startThresholdW: 1400 # surplus must reach this to start (~min charge power, 1-phase Twingo)
+  enableMode: pv # pv = charge only on surplus (evcc modulates current; evcc >= 0.316 calls this mode "smart"); now = full power
+  startThresholdW: 1400 # surplus must reach this to start. Set to ~min charge power for YOUR phases x minCurrent
+  #                       (3 phases x 8 A x 230 V = ~5.5 kW; 1 phase x 6 A = ~1.4 kW). wha auto-floors it at
+  #                       (minCurrentA or evcc's effectiveMinCurrent) x 230 V x phases + startMarginW (surplus + surplus_latch
+  #                       profiles; not power_latch), so a too-low value cannot cause flapping. With the defaults the
+  #                       floor is 5720 W until evcc publishes its values: single-phase installs whose car allows 6 A can set phases: 1 / minCurrentA: 6 (floor 1580 W);
+  #                       a 3-phase Renault Twingo needs 8 A (floor 5720 W).
+  minCurrentA: 8 # fallback min charge current (A); used only if evcc does not publish effectiveMinCurrent
+  phases: 3 # phase count for the floor; used ONLY if evcc has not published phasesConfigured (evcc phasesConfigured 0 = auto counts as 1 phase)
+  startMarginW: 200 # extra W added on top of the computed minimum charge power for the start floor
+  maxCurrentCeilingA: 16 # circuit/charger rating in A; wha never sends a max-current above this (WHA_CONTROL_MAXCURRENTCEILINGA)
+  stallTimeout: 3m # charger enabled but not charging for this long -> stall banner + one recovery attempt
+  stallRecoveryOff: 90s # how long the single recovery attempt keeps the loadpoint off before resuming
   stopThresholdW: 0 # surplus must drop below this to stop
   startDwell: 2m # surplus must be sustained this long before starting (anti-flap)
   stopDwell: 3m # low surplus sustained this long before stopping (matches evcc disableDelay)

@@ -12,6 +12,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -34,6 +36,7 @@ type Controller interface {
 	SetAutoProfile(profile string) error
 	SetStartThreshold(w float64) error
 	SetTargetSoC(pct int) error
+	SetMaxCurrent(amps int) error
 }
 
 // Store is the subset of *store.Store the web layer needs.
@@ -192,19 +195,68 @@ func (s *Server) registerRoutes() {
 	app.Get("/partials/update", s.handleUpdatePartial)
 	app.Get("/lang/:code", s.handleSetLang)
 
-	// JSON + form API.
-	api := app.Group("/api")
+	// JSON + form API. State-changing requests are guarded against cross-site
+	// request forgery: the control surface is unauthenticated on the LAN.
+	api := app.Group("/api", s.sameOriginGuard)
 	api.Get("/status", s.handleAPIStatus)
 	api.Post("/override", s.handleAPIOverride)
 	api.Post("/charge-power", s.handleChargePower)
 	api.Post("/auto-profile", s.handleAutoProfile)
 	api.Post("/start-threshold", s.handleStartThreshold)
 	api.Post("/target-soc", s.handleTargetSoC)
+	api.Post("/max-current", s.handleMaxCurrent)
 	api.Get("/sessions", s.handleAPISessions)
 	api.Get("/events", s.handleAPIEvents)
 	api.Get("/history", s.handleAPIHistory)
 	api.Post("/update/check", s.handleUpdateCheck)
 	api.Post("/update/apply", s.handleUpdateApply)
+}
+
+// sameOriginGuard rejects state-changing requests (POST/PUT/PATCH/DELETE)
+// that a browser marks as coming from another site, so a malicious page the
+// operator happens to visit cannot drive the wallbox through a hidden form or
+// fetch. It answers 403 when:
+//
+//   - Sec-Fetch-Site is "cross-site" (sent by all current browsers), or
+//   - an Origin header is present and its host matches neither the request
+//     Host nor X-Forwarded-Host (Caddy's reverse_proxy passes Host through
+//     unchanged; X-Forwarded-Host is accepted as well for proxies that rewrite
+//     Host). Origin "null" never matches.
+//
+// Requests without these headers (curl, scripts, the JSON API from tools) pass:
+// browsers always send at least one of them on a cross-origin POST, and a page
+// cannot forge them — nor X-Forwarded-Host, since a custom header makes the
+// browser send a CORS preflight that this server never approves.
+func (s *Server) sameOriginGuard(c *fiber.Ctx) error {
+	switch c.Method() {
+	case fiber.MethodPost, fiber.MethodPut, fiber.MethodPatch, fiber.MethodDelete:
+	default:
+		return c.Next()
+	}
+	if strings.EqualFold(strings.TrimSpace(c.Get("Sec-Fetch-Site")), "cross-site") {
+		return fiber.NewError(fiber.StatusForbidden, "cross-site request rejected")
+	}
+	if origin := c.Get(fiber.HeaderOrigin); origin != "" &&
+		!originMatchesHost(origin, string(c.Request().Host()), c.Get(fiber.HeaderXForwardedHost)) {
+		return fiber.NewError(fiber.StatusForbidden, "cross-origin request rejected")
+	}
+	return c.Next()
+}
+
+// originMatchesHost reports whether the Origin header's host[:port] equals the
+// request host or the first X-Forwarded-Host entry (case-insensitive).
+func originMatchesHost(origin, host, forwardedHost string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if strings.EqualFold(u.Host, host) {
+		return true
+	}
+	if first, _, _ := strings.Cut(forwardedHost, ","); strings.TrimSpace(first) != "" {
+		return strings.EqualFold(u.Host, strings.TrimSpace(first))
+	}
+	return false
 }
 
 // Start binds and serves on BindAddr:Port. It blocks until the server is shut

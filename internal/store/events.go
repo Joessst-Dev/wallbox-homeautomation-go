@@ -10,7 +10,7 @@ import (
 type Event struct {
 	ID         int64
 	TS         time.Time
-	Type       string // state_change|command|override|connection|error
+	Type       string // state_change|command|override|connection|error|stalled|stall_recovery
 	FromState  string
 	ToState    string
 	Action     string

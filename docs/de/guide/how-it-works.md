@@ -49,7 +49,7 @@ Aktivierst du **Über den Deckel hinaus laden**, hebt `wha` den `limitSoc`-Backs
 
 ### Fahrzeug-SoC wird nie auf Veralterung geprüft
 
-evcc fragt die Renault-Cloud etwa einmal pro Stunde ab, und nur während eine Ladesitzung aktiv ist. `wha` nutzt den zuletzt bekannten SoC-Wert unabhängig von seinem Alter – er wird nie als „veraltet“ eingestuft. Der `limitSoc`-Backstop begrenzt ein etwaiges Überschießen zwischen den Abfragen.
+Standardmäßig fragt evcc die Renault-Cloud etwa einmal pro Stunde ab, und nur während eine Ladesitzung aktiv ist; dazwischen ist der Wert evccs eigener Schätzwert. `wha` nutzt den zuletzt bekannten SoC-Wert unabhängig von seinem Alter – er wird nie als „veraltet“ eingestuft. Der `limitSoc`-Backstop begrenzt ein etwaiges Überschießen zwischen den Abfragen.
 
 ## Überschussberechnung
 
@@ -90,6 +90,18 @@ Fail-safe/eine manuelle Übersteuerung. Startschwelle und Laden-bis-Ziel jedes
 fest-Profils werden unabhängig gespeichert, sodass ein Wechsel zwischen ihnen
 ihre Einstellungen nicht vermischt.
 
+## Mindestladeleistung und Start-Untergrenze
+
+evcc kann nicht unterhalb seiner **Mindestladeleistung** laden: minimaler Strom × 230 V × Phasen. Bei 3 Phasen und 8 A sind das etwa 5,5 kW, bei 1 Phase und 6 A etwa 1,4 kW. evcc aktiviert einen Loadpoint erst, wenn die Einspeisung dieses Niveau erreicht – es startet nicht „bei irgendeinem Überschuss“. `wha` hebt seinen effektiven Startschwellenwert deshalb auf mindestens
+
+```
+max(startThresholdW, minCurrent × 230 V × phases + startMarginW)
+```
+
+an. Dabei nutzt es die von evcc veröffentlichten Live-Werte `effectiveMinCurrent` und `phasesConfigured`; `control.minCurrentA` gilt nur, bis evcc `effectiveMinCurrent` veröffentlicht hat, `control.phases` nur, wenn evcc `phasesConfigured` nicht veröffentlicht hat. Veröffentlicht evcc `phasesConfigured: 0` (automatische 1p/3p-Umschaltung), zählt die Untergrenze eine Phase. Die Untergrenze gilt für die Profile **Überschuss** und **Überschuss (fest)**, nicht für **PV-Leistung**. Mit den Standardwerten sind es 5720 W, bis evcc seine Werte meldet. So fordert `wha` keinen Start an, den evcc sofort verweigern würde.
+
+evccs eigene Ein-/Ausschaltverzögerungen sind ein **zweites, paralleles** Tor; sie ersetzen die Verweilzeiten von `wha` nicht (siehe unten).
+
 ## Hysterese und Verweilzeit
 
 Um Starts und Stopps bei kurzzeitigen Schwankungen zu vermeiden, steuern zwei Timer die Moduswechsel:
@@ -97,7 +109,15 @@ Um Starts und Stopps bei kurzzeitigen Schwankungen zu vermeiden, steuern zwei Ti
 - **Start-Verweilzeit** (Standard 2 Minuten): Der Überschuss muss durchgehend über `startThresholdW` bleiben, bevor die Ladung beginnt.
 - **Stopp-Verweilzeit** (Standard 3 Minuten): Der Überschuss muss durchgehend unter `stopThresholdW` bleiben, bevor die Ladung stoppt.
 
-Das schützt das Easee-Schütz vor Churn durch Cloud-Latenz und schnelle PV-Schwankungen.
+Das schützt das Easee-Schütz vor Churn durch Cloud-Latenz und schnelle PV-Schwankungen. evcc wendet seine eigenen `enable`-/`disable`-Verzögerungen unabhängig und parallel an; die effektive Verzögerung ist also die des Tores, das zuletzt öffnet.
+
+## Stillstandserkennung
+
+Ist die Wallbox für `control.stallTimeout` (Standard 3 Minuten) aktiviert, lädt aber nicht, markiert `wha` im Dashboard einen **Stillstand**. Danach versucht es pro Ansteck-Sitzung eine Wiederherstellung – `off` für `control.stallRecoveryOff` (90 s), dann fortsetzen – und markiert anschließend nur noch. Die Markierung verschwindet erst, wenn Leistung fließt, der Ziel-SoC erreicht ist, die Entscheidung von `wha` auf `off` geht oder das Fahrzeug abgesteckt wird; eine fehlgeschlagene Wiederherstellung bleibt markiert. Das Wiederherstellungs-Budget wird erst zurückgesetzt, nachdem das Fahrzeug in zwei aufeinanderfolgenden Takten als abgesteckt gesehen wurde (bei Standard-`decisionInterval` etwa 30 s). Der einmalige `off`-Impuls feuert auch bei einem manuellen **Jetzt laden**. Siehe [Fehlerbehebung](/de/reference/troubleshooting#wha-meldet-laden-aber-die-wallbox-ist-inaktiv-stillstand).
+
+## Was evcc mit `off` macht
+
+`off` und ein erreichtes `limitSoc` **pausieren** die Easee nur; evcc deaktiviert die Wallbox nie, und kein MQTT-Kommando kann das. Außerdem ignoriert evcc einen Modus, in dem es bereits ist. Beides ist wie vorgesehen.
 
 ## Prioritätsreihenfolge
 

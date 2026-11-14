@@ -17,6 +17,7 @@ When you want to return to surplus-only charging in spring, switch it back to **
 | Setting | Persists |
 |---------|---------|
 | **Charge power** (Surplus / Full power) | ✅ Yes — stored in the database |
+| **Max charge current** | ✅ Yes — stored in the database (and persisted by evcc) |
 | **Auto** / **Charge now** / **Stop** override | ❌ No — resets to Auto on restart |
 | Configuration in `config.yaml` | ✅ Yes — it's a file |
 
@@ -28,9 +29,21 @@ After a `docker compose down && up`, the charge power setting is restored from t
 
 evcc does not authenticate MQTT set-topics. Anyone who can publish to `evcc/loadpoints/<id>/mode/set` can control your charging. The one-command installer secures Mosquitto with a randomly generated credential and an ACL that restricts `wha` to `evcc/#`. Even so, do not expose port 1883 to the internet or to untrusted networks.
 
+## Does evcc start charging as soon as there is any surplus?
+
+No. evcc only enables a loadpoint once export reaches its **minimum charge power** (`minCurrent` × 230 V × phases, about 5.5 kW at 8 A on three phases), regardless of `enable.threshold: 0`. evcc's own enable/disable delays also run in parallel with `wha`'s start/stop dwells. `wha` floors its `startThresholdW` at that same minimum so the two agree — see [Configuration](/guide/configuration#surplus-thresholds).
+
+## Why does "Charge now" ignore the limit I set in the Easee app?
+
+In `now` mode evcc writes the Easee dynamic current from its own max current (16 A default), which overrides temporary app limits. Use the dashboard **Max charge current** setting or `maxCurrent` in `evcc.yaml`. Details: [Troubleshooting](/reference/troubleshooting#charge-now-ignores-my-current-limit).
+
+## Why does the wallbox stay enabled after charging stops?
+
+`off` and `limitSoc` only *pause* the Easee; evcc never disables it. See [Troubleshooting](/reference/troubleshooting#wallbox-stays-enabled-after-a-session).
+
 ## Why does wha need its own policy on top of evcc?
 
-evcc has a built-in `pv` mode that also charges on surplus. `wha` adds:
+evcc has a built-in PV mode (`pv`, renamed `smart` in evcc 0.316) that also charges on surplus. `wha` adds:
 - A stricter, auditable policy with documented priority order.
 - Persistent charge history in SQLite.
 - A purpose-built dashboard focused on the operator view (surplus, SoC, override).
@@ -50,11 +63,11 @@ On restart, `wha` re-asserts the mode and `limitSoc` on the first control tick.
 
 ## Why is vehicle SoC not updated in real time?
 
-The Renault MY API is a cloud polling service — evcc can only request an update when a charge session is active, and then roughly once per hour. This is a limitation of the Renault integration, not `wha`.
+The Renault MY API is a cloud polling service — by default (`soc.poll.mode: charging`) evcc only requests an update while a charge session is active, and then roughly once per hour. Car data is only reachable while the car is plugged in. Between polls the value shown is **evcc's estimate** (charged energy × 0.85 ÷ vehicle `capacity`), only re-synced when Renault returns a changed value. This is a limitation of the Renault integration, not `wha`.
 
 Implications:
 - SoC may be unknown (showing 0%) on a fresh setup until the first charge.
-- SoC can lag reality by up to an hour.
+- SoC can lag reality by up to an hour and may differ from the car's display — see [Troubleshooting → SoC differs from the car](/reference/troubleshooting#soc-differs-from-the-car-estimate). A too-small `capacity` in `evcc.yaml` overstates SoC.
 - The `limitSoc` backstop compensates: even if `wha` doesn't see the SoC hit 80%, evcc's own limit stops the charge.
 
 ## How do I check if everything is working?

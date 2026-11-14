@@ -49,7 +49,7 @@ When you enable **Charge past the cap**, `wha` temporarily raises the `limitSoc`
 
 ### Vehicle SoC is never stale-gated
 
-evcc polls the Renault cloud roughly once per hour and only while a charge session is active. `wha` uses the last known SoC value regardless of age — it is never declared "stale". The `limitSoc` backstop is what bounds any overshoot between polls.
+By default evcc polls the Renault cloud roughly once per hour and only while a charge session is active; in between, the value is evcc's own estimate. `wha` uses the last known SoC value regardless of age — it is never declared "stale". The `limitSoc` backstop is what bounds any overshoot between polls.
 
 ## Surplus calculation
 
@@ -88,6 +88,18 @@ begun — the only way out is the SoC target, or a fail-safe/manual override.
 Each latch profile's Start threshold and Charge to target are stored
 independently, so switching between them does not mix up their settings.
 
+## Minimum charge power and the start floor
+
+evcc cannot charge below its **minimum charge power**: minimum current × 230 V × phases. At 3 phases and 8 A that is about 5.5 kW; at 1 phase and 6 A about 1.4 kW. evcc only enables a loadpoint once export reaches that level — it does not start "on any surplus". `wha` therefore floors its effective start threshold at
+
+```
+max(startThresholdW, minCurrent × 230 V × phases + startMarginW)
+```
+
+using the live `effectiveMinCurrent` and `phasesConfigured` values evcc publishes. `control.minCurrentA` is used only until evcc has published `effectiveMinCurrent`; `control.phases` only when evcc has not published `phasesConfigured`. If evcc publishes `phasesConfigured: 0` (automatic 1p/3p), the floor counts one phase. The floor applies to the **Surplus** and **Surplus (latch)** profiles, not to **PV power**. With the defaults it is 5720 W until evcc reports its values. This keeps `wha` from requesting a start that evcc would immediately refuse.
+
+evcc's own enable/disable delays are a **second, parallel** gate; they do not replace `wha`'s dwells (see below).
+
 ## Hysteresis and dwell
 
 To avoid starting and stopping on transient fluctuations, two timers govern mode transitions:
@@ -95,7 +107,15 @@ To avoid starting and stopping on transient fluctuations, two timers govern mode
 - **Start dwell** (default 2 minutes): surplus must stay above `startThresholdW` continuously before charging begins.
 - **Stop dwell** (default 3 minutes): surplus must stay below `stopThresholdW` continuously before charging stops.
 
-This protects the Easee contactor from cloud-latency churn and rapid PV variations.
+This protects the Easee contactor from cloud-latency churn and rapid PV variations. evcc applies its own `enable`/`disable` delays independently and in parallel, so the effective delay is whichever gate opens last.
+
+## Stall detection
+
+If the charger is enabled but not charging for `control.stallTimeout` (default 3 minutes), `wha` flags a **stall** on the dashboard. It then tries one recovery per plug-in session — `off` for `control.stallRecoveryOff` (90 s), then resume — and afterwards only keeps flagging. The flag clears only when power flows, the target SoC is reached, `wha`'s decision goes to `off`, or the car is unplugged; a failed recovery stays flagged. The recovery budget resets only after the car has been seen unplugged on two consecutive ticks (about 30 s at the default `decisionInterval`). The one-time `off` pulse also fires during a manual **Charge now**. See [Troubleshooting](/reference/troubleshooting#wha-says-charging-but-the-wallbox-is-idle-stalled).
+
+## What evcc does with `off`
+
+`off` and a reached `limitSoc` only **pause** the Easee; evcc never disables the charger and no MQTT command can. evcc also ignores a mode it is already in. Both are working as designed.
 
 ## Priority order
 

@@ -108,8 +108,32 @@ type Control struct {
 	// initial default — the runtime, persisted value lives on ControlState.
 	AutoProfile string `mapstructure:"autoProfile"`
 
+	// StartThresholdW is the operator's start threshold. For the surplus and
+	// surplus_latch profiles it is floored at the real minimum charge power
+	// (see MinCurrentA/Phases/StartMarginW), so a value below what the charger
+	// can actually hold never causes start/stop flapping.
 	StartThresholdW float64 `mapstructure:"startThresholdW"`
 	StopThresholdW  float64 `mapstructure:"stopThresholdW"`
+
+	// MinCurrentA and Phases describe the minimum charge power the loadpoint
+	// can hold (MinCurrentA × 230 V × Phases). They are FALLBACKS, used only
+	// until evcc publishes its own effectiveMinCurrent / phasesConfigured.
+	// StartMarginW is added on top of that minimum to form the start floor.
+	MinCurrentA  int     `mapstructure:"minCurrentA"`
+	Phases       int     `mapstructure:"phases"`
+	StartMarginW float64 `mapstructure:"startMarginW"`
+
+	// MaxCurrentCeilingA is the hard upper bound for the operator's runtime
+	// max charge-current limit — set it to your circuit / charger rating. wha
+	// never publishes an evcc maxCurrent above it.
+	MaxCurrentCeilingA int `mapstructure:"maxCurrentCeilingA"`
+
+	// StallTimeout is how long the loadpoint must look stalled (charging
+	// wanted and enabled, vehicle connected and not full, yet no power flowing)
+	// before wha flags it. StallRecoveryOff is the length of the single "off"
+	// pulse wha sends per connected session to try to un-stick it.
+	StallTimeout     time.Duration `mapstructure:"stallTimeout"`
+	StallRecoveryOff time.Duration `mapstructure:"stallRecoveryOff"`
 
 	StartDwell time.Duration `mapstructure:"startDwell"`
 	StopDwell  time.Duration `mapstructure:"stopDwell"`
@@ -184,6 +208,14 @@ const (
 	EnableModeNow = "now"
 )
 
+// Charge-current bounds (amps) enforced by Validate: IEC 61851 does not allow
+// signaling less than 6 A, and no supported single-loadpoint setup exceeds
+// 32 A per phase.
+const (
+	MinCurrentLowerA = 6
+	CurrentUpperA    = 32
+)
+
 // Auto-charge profiles. AutoProfileSurplus is the existing surplus-hysteresis
 // behavior (start/stop thresholds + dwell). AutoProfilePowerLatch and
 // AutoProfileSurplusLatch are "charge to completion" profiles: once triggered
@@ -208,20 +240,26 @@ func Default() Config {
 			LoadpointID: "1",
 		},
 		Control: Control{
-			EnableMode:        EnableModePV,
-			AutoProfile:       AutoProfileSurplus,
-			StartThresholdW:   1400, // ~min charge power, single-phase Twingo
-			StopThresholdW:    0,
-			StartDwell:        2 * time.Minute, // generous: protect Easee from cloud-latency churn
-			StopDwell:         3 * time.Minute, // matches evcc's own disableDelay
-			SoCCap:            80,
-			SoCResumeBelow:    78,
-			SoCMax:            100,
-			DecisionInterval:  15 * time.Second,
-			StaleTimeout:      60 * time.Second,
-			Republish:         5 * time.Minute,
-			RetentionWindow:   90 * 24 * time.Hour, // 90 days; 0 disables pruning
-			RetentionInterval: 6 * time.Hour,
+			EnableMode:         EnableModePV,
+			AutoProfile:        AutoProfileSurplus,
+			StartThresholdW:    1400, // floored at the real min charge power (see MinCurrentA/Phases)
+			StopThresholdW:     0,
+			MinCurrentA:        8, // fallback until evcc publishes effectiveMinCurrent
+			Phases:             3, // fallback until evcc publishes phasesConfigured
+			StartMarginW:       200,
+			MaxCurrentCeilingA: 16, // circuit / charger rating
+			StallTimeout:       3 * time.Minute,
+			StallRecoveryOff:   90 * time.Second,
+			StartDwell:         2 * time.Minute, // generous: protect Easee from cloud-latency churn
+			StopDwell:          3 * time.Minute, // matches evcc's own disableDelay
+			SoCCap:             80,
+			SoCResumeBelow:     78,
+			SoCMax:             100,
+			DecisionInterval:   15 * time.Second,
+			StaleTimeout:       60 * time.Second,
+			Republish:          5 * time.Minute,
+			RetentionWindow:    90 * 24 * time.Hour, // 90 days; 0 disables pruning
+			RetentionInterval:  6 * time.Hour,
 		},
 		Web: Web{
 			BindAddr: "0.0.0.0",
@@ -266,6 +304,26 @@ func (c Config) Validate() error {
 	if c.Control.StartThresholdW <= c.Control.StopThresholdW {
 		return fmt.Errorf("control.startThresholdW (%.0f) must be greater than stopThresholdW (%.0f)",
 			c.Control.StartThresholdW, c.Control.StopThresholdW)
+	}
+	if c.Control.MinCurrentA < MinCurrentLowerA || c.Control.MinCurrentA > CurrentUpperA {
+		return fmt.Errorf("control.minCurrentA must be within %d..%d, got %d",
+			MinCurrentLowerA, CurrentUpperA, c.Control.MinCurrentA)
+	}
+	if c.Control.Phases != 1 && c.Control.Phases != 3 {
+		return fmt.Errorf("control.phases must be 1 or 3, got %d", c.Control.Phases)
+	}
+	if c.Control.StartMarginW < 0 {
+		return fmt.Errorf("control.startMarginW must not be negative, got %.0f", c.Control.StartMarginW)
+	}
+	if c.Control.MaxCurrentCeilingA < c.Control.MinCurrentA || c.Control.MaxCurrentCeilingA > CurrentUpperA {
+		return fmt.Errorf("control.maxCurrentCeilingA (%d) must be within minCurrentA (%d)..%d",
+			c.Control.MaxCurrentCeilingA, c.Control.MinCurrentA, CurrentUpperA)
+	}
+	if c.Control.StallTimeout <= 0 {
+		return fmt.Errorf("control.stallTimeout must be positive")
+	}
+	if c.Control.StallRecoveryOff <= 0 {
+		return fmt.Errorf("control.stallRecoveryOff must be positive")
 	}
 	if c.Control.SoCCap < 1 || c.Control.SoCCap > 100 {
 		return fmt.Errorf("control.socCap must be within 1..100, got %d", c.Control.SoCCap)

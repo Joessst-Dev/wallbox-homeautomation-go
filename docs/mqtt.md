@@ -22,9 +22,15 @@ published **retained**, so wha re-seeds its state from the last known values on 
 | `evcc/loadpoints/<id>/charging` | `true`/`false` | literal bool strings, **not** `1`/`0` |
 | `evcc/loadpoints/<id>/connected` | `true`/`false` | vehicle plugged in |
 | `evcc/loadpoints/<id>/enabled` | `true`/`false` | evcc has the loadpoint enabled |
-| `evcc/loadpoints/<id>/vehicleSoc` | float `0..100` | **coarse** — updated ~hourly, only while charging |
-| `evcc/loadpoints/<id>/mode` | `off`/`now`/`minpv`/`pv` | current mode |
+| `evcc/loadpoints/<id>/vehicleSoc` | float `0..100` | evcc's **estimate**; re-synced only when Renault returns a changed value (polled only while charging by default) |
+| `evcc/loadpoints/<id>/mode` | `off`/`smart`/`now` (evcc ≥ 0.316); `off`/`now`/`minpv`/`pv` (older) | current mode; evcc ≥ 0.316 reports `smart` where older versions reported `pv` (wha only stores it, never compares) |
+| `evcc/loadpoints/<id>/alwaysCharge` | `off`/`on`/`once` | evcc ≥ 0.316, replaces `minpv`; informational, wha does not use it |
 | `evcc/loadpoints/<id>/limitSoc` | int | current SoC limit |
+| `evcc/loadpoints/<id>/effectiveMinCurrent` | float (A) | minimum current evcc actually uses; drives the start-threshold floor (optional) |
+| `evcc/loadpoints/<id>/phasesConfigured` | int `0`/`1`/`3` | configured phases, `0` = evcc auto (wha floor counts 1 phase; optional) |
+| `evcc/loadpoints/<id>/phasesActive` | int `1`/`3` | phases currently in use (optional) |
+| `evcc/loadpoints/<id>/maxCurrent` | float (A) | current max charge current (optional) |
+| `evcc/loadpoints/<id>/chargerStatusReason` | string | charger-reported reason when not charging (optional) |
 | `evcc/status` | `online`/`offline` | evcc's MQTT LWT; drives fail-safe |
 
 Parse everything numeric as `float64` (evcc trims trailing decimals, e.g. `1234.000` →
@@ -37,10 +43,11 @@ read key:
 
 | Topic | Payload | Used for |
 | ----- | ------- | -------- |
-| `evcc/loadpoints/<id>/mode/set` | `off` \| `now` \| `minpv` \| `pv` | enable/disable charging (wha toggles `pv` ↔ `off`) |
-| `evcc/loadpoints/<id>/limitSoc/set` | int (percent) | the dead-man SoC backstop (`= socCap`) |
+| `evcc/loadpoints/<id>/mode/set` | `off` \| `now` \| `pv` \| `minpv` (`smart` on evcc ≥ 0.316) | enable/disable charging (wha sends `pv`/`now`/`off`; evcc ≥ 0.316 still accepts `pv`, which also forces alwaysCharge off) |
+| `evcc/loadpoints/<id>/limitSoc/set` | whole number (percent, no range check in evcc) | the dead-man SoC backstop (`= socCap`) |
+| `evcc/loadpoints/<id>/maxCurrent/set` | float (A), decimal | max charge current; wha clamps to `control.maxCurrentCeilingA` (evcc persists it, rejects `< minCurrent` with an ERROR in its log, has no upper bound) |
 
-> ⚠️ **`limitSoc/set` is camelCase.** A lowercase `limitsoc/set` is silently ignored by evcc.
+> ⚠️ **`limitSoc/set` and `maxCurrent/set` are camelCase.** Lowercase variants are silently ignored by evcc.
 
 ## Behavior notes
 

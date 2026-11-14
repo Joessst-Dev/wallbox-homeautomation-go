@@ -17,6 +17,7 @@ Möchtest du im Frühling wieder auf reines Überschussladen zurück, schalte ei
 | Einstellung | Bleibt erhalten |
 |---------|---------|
 | **Ladeleistung** (Überschuss / Volle Leistung) | ✅ Ja – in der Datenbank gespeichert |
+| **Maximaler Ladestrom** | ✅ Ja – in der Datenbank gespeichert (und von evcc persistiert) |
 | Übersteuerung **Auto** / **Jetzt laden** / **Stopp** | ❌ Nein – wird beim Neustart auf Auto zurückgesetzt |
 | Konfiguration in `config.yaml` | ✅ Ja – es ist eine Datei |
 
@@ -28,9 +29,21 @@ Nach einem `docker compose down && up` wird die Ladeleistungs-Einstellung aus de
 
 evcc authentifiziert MQTT-Set-Topics nicht. Jeder, der auf `evcc/loadpoints/<id>/mode/set` veröffentlichen kann, kann deine Ladung steuern. Der Ein-Befehl-Installer sichert Mosquitto mit einem zufällig generierten Zugangsdatum und einer ACL, die `wha` auf `evcc/#` beschränkt. Trotzdem: Exponiere Port 1883 niemals ins Internet oder in nicht vertrauenswürdige Netzwerke.
 
+## Startet evcc die Ladung, sobald irgendein Überschuss da ist?
+
+Nein. evcc aktiviert einen Loadpoint erst, wenn die Einspeisung seine **Mindestladeleistung** erreicht (`minCurrent` × 230 V × Phasen, etwa 5,5 kW bei 8 A auf drei Phasen) – unabhängig von `enable.threshold: 0`. Außerdem laufen evccs eigene Ein-/Ausschaltverzögerungen parallel zu den Start-/Stopp-Verweilzeiten von `wha`. `wha` hebt seinen `startThresholdW` auf dasselbe Minimum an, damit beide übereinstimmen – siehe [Konfiguration](/de/guide/configuration#uberschuss-schwellenwerte).
+
+## Warum ignoriert „Jetzt laden“ das Limit aus der Easee-App?
+
+Im `now`-Modus schreibt evcc den dynamischen Easee-Strom aus seinem eigenen Maximalstrom (Standard 16 A), was vorübergehende App-Limits überschreibt. Nutze die Dashboard-Einstellung **Maximaler Ladestrom** oder `maxCurrent` in `evcc.yaml`. Details: [Fehlerbehebung](/de/reference/troubleshooting#jetzt-laden-ignoriert-mein-stromlimit).
+
+## Warum bleibt die Wallbox nach dem Laden aktiviert?
+
+`off` und `limitSoc` *pausieren* die Easee nur; evcc deaktiviert sie nie. Siehe [Fehlerbehebung](/de/reference/troubleshooting#wallbox-bleibt-nach-einer-sitzung-aktiviert).
+
 ## Warum braucht wha eine eigene Policy zusätzlich zu evcc?
 
-evcc hat einen eingebauten `pv`-Modus, der ebenfalls auf Überschuss lädt. `wha` ergänzt:
+evcc hat einen eingebauten PV-Modus (`pv`, seit evcc 0.316 in `smart` umbenannt), der ebenfalls auf Überschuss lädt. `wha` ergänzt:
 - Eine strengere, nachvollziehbare Policy mit dokumentierter Prioritätsreihenfolge.
 - Persistente Ladehistorie in SQLite.
 - Ein zweckgebundenes Dashboard mit Fokus auf die Betreibersicht (Überschuss, SoC, Übersteuerung).
@@ -50,11 +63,11 @@ Beim Neustart setzt `wha` beim ersten Steuerungstakt Modus und `limitSoc` erneut
 
 ## Warum wird der Fahrzeug-SoC nicht in Echtzeit aktualisiert?
 
-Die Renault-MY-API ist ein Cloud-Abfragedienst – evcc kann nur ein Update anfordern, während eine Ladesitzung aktiv ist, und dann etwa einmal pro Stunde. Das ist eine Einschränkung der Renault-Integration, nicht von `wha`.
+Die Renault-MY-API ist ein Cloud-Abfragedienst – standardmäßig (`soc.poll.mode: charging`) fordert evcc nur ein Update an, während eine Ladesitzung aktiv ist, und dann etwa einmal pro Stunde. Fahrzeugdaten sind nur erreichbar, solange das Fahrzeug angesteckt ist. Zwischen den Abfragen ist der angezeigte Wert **evccs Schätzwert** (geladene Energie × 0,85 ÷ Fahrzeug-`capacity`), nur neu abgeglichen, wenn Renault einen geänderten Wert liefert. Das ist eine Einschränkung der Renault-Integration, nicht von `wha`.
 
 Auswirkungen:
 - Der SoC kann bei einem frischen Setup bis zur ersten Ladung unbekannt sein (zeigt 0 %).
-- Der SoC kann der Realität um bis zu eine Stunde hinterherhinken.
+- Der SoC kann der Realität um bis zu eine Stunde hinterherhinken und von der Fahrzeuganzeige abweichen – siehe [Fehlerbehebung → SoC weicht vom Fahrzeug ab](/de/reference/troubleshooting#soc-weicht-vom-fahrzeug-ab-schatzwert). Eine zu kleine `capacity` in `evcc.yaml` überschätzt den SoC.
 - Der `limitSoc`-Backstop gleicht das aus: Selbst wenn `wha` nicht sieht, dass der SoC 80 % erreicht, stoppt evccs eigenes Limit die Ladung.
 
 ## Wie prüfe ich, ob alles funktioniert?

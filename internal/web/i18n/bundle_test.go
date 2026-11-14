@@ -85,6 +85,28 @@ var _ = Describe("Bundle", func() {
 		})
 	})
 
+	Describe("max-current, stall, and SoC-estimate copy", func() {
+		DescribeTable("is translated in every locale (never the raw key)",
+			func(key string) {
+				for _, lang := range i18n.Supported {
+					Expect(b.T(lang, key)).NotTo(Equal(key), "%s is missing %q", lang, key)
+				}
+			},
+			Entry(nil, "controls.max_current_label"),
+			Entry(nil, "controls.max_current_help"),
+			Entry(nil, "controls.max_current_apply"),
+			Entry(nil, "controls.stalled_title"),
+			Entry(nil, "controls.stalled_body"),
+			Entry(nil, "status.soc_estimated"),
+			Entry(nil, "controls.start_threshold_surplus"),
+		)
+
+		It("formats the max-current help with the min and ceiling amps", func() {
+			Expect(b.T("en", "controls.max_current_help", 6, 16)).To(ContainSubstring("6–16 A"))
+			Expect(b.T("de", "controls.max_current_help", 6, 16)).To(ContainSubstring("6–16 A"))
+		})
+	})
+
 	Describe("catalog parity", func() {
 		It("has the exact same key set in every locale", func() {
 			catalogs := i18n.Catalogs(b)

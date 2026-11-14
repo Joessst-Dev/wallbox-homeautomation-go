@@ -43,6 +43,7 @@ func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ctrl
 		VehicleSoC:           int(math.Round(s.VehicleSoC.Value)),
 		VehicleSoCKnown:      s.VehicleSoC.Seen,
 		Charging:             s.Charging.Value,
+		Enabled:              s.Enabled.Value,
 		Connected:            s.Connected.Value,
 		Ready:                ready,
 		Stale:                stale,
@@ -54,5 +55,28 @@ func InputsFromSnapshot(now time.Time, s evcc.Snapshot, cfg config.Control, ctrl
 		AutoProfile:          ctrl.AutoProfile,
 		StartThresholdW:      thresholdW,
 		TargetSoC:            targetSoC,
+		// The min-charge-power inputs are slow, retained evcc settings, not live
+		// measurements, so (like vehicle SoC) they are not freshness-gated.
+		EffectiveMinCurrentA:  s.EffectiveMinCurrent.Value,
+		PhasesConfigured:      int(math.Round(s.PhasesConfigured.Value)),
+		PhasesConfiguredKnown: s.PhasesConfigured.Seen,
 	}
+}
+
+// SoCEstimatedAfter is how long the vehicle SoC may sit unchanged while
+// charging before the dashboard labels it an estimate. evcc only polls the
+// Renault cloud about hourly; between polls the value it publishes does not
+// track what is actually going into the battery.
+const SoCEstimatedAfter = 5 * time.Minute
+
+// VehicleSoCEstimated reports whether the vehicle SoC shown to the operator
+// should be marked as an estimate: the car is charging and the SoC value has not
+// changed for longer than SoCEstimatedAfter. It is display-only — the SoC is
+// deliberately never stale-gated in Decide (the evcc limitSoc backstop bounds
+// any overshoot). A metric without a ChangedAt (never received) is not flagged.
+func VehicleSoCEstimated(now time.Time, charging bool, soc evcc.FloatMetric) bool {
+	if !charging || !soc.Seen || soc.ChangedAt.IsZero() {
+		return false
+	}
+	return now.Sub(soc.ChangedAt) > SoCEstimatedAfter
 }

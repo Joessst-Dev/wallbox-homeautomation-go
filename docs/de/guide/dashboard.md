@@ -31,7 +31,7 @@ Die Karte **Energiefluss** zeigt das aktuelle Energiebild:
 
 Die Karte **Fahrzeug** zeigt:
 
-- Den Fahrzeug-Ladezustand (%) als große Zahl und als Fortschrittsbalken. Der Fortschrittsbalken hat eine Markierung beim 80-%-Deckel.
+- Den Fahrzeug-Ladezustand (%) als große Zahl und als Fortschrittsbalken. Der Fortschrittsbalken hat eine Markierung beim 80-%-Deckel. Der Wert ist evccs **Schätzwert**; lädt das Fahrzeug und hat sich der Wert länger als 5 Minuten nicht geändert, wird er als *von evcc geschätzt* gekennzeichnet.
 - Status **Verbunden** / **Nicht angesteckt**.
 - Status **Lädt** / **Inaktiv**.
 - Ein **Bereit**-Abzeichen, wenn der Loadpoint aktiviert und ein Fahrzeug angesteckt ist.
@@ -44,6 +44,8 @@ Die Karte **Status** zeigt den Verbindungsstatus von:
 - **evcc** – ob evcc als online meldet (über das MQTT Last Will and Testament).
 
 Beide müssen für den Normalbetrieb grün sein. Am oberen Rand des Statusbereichs erscheint ein Warnbanner, wenn Daten veraltet sind oder eine Verbindung verloren geht.
+
+Ein weiteres Banner erscheint, wenn die Wallbox für `control.stallTimeout` (Standard 3 Minuten) **aktiviert ist, aber nicht lädt**. `wha` versucht pro Ansteck-Sitzung eine Aus/Fortsetzen-Wiederherstellung und markiert sonst nur – siehe [Fehlerbehebung](/de/reference/troubleshooting#wha-meldet-laden-aber-die-wallbox-ist-inaktiv-stillstand).
 
 ## Übersteuerungen
 
@@ -70,13 +72,13 @@ Steuerungsstrategie, die verwendet wird, solange keine manuelle Übersteuerung a
 
 | Profil | Verhalten |
 |---------|----------|
-| **Überschuss** (`surplus`) | Standard-Hysterese-Verhalten: startet und stoppt bei anhaltendem PV-Überschuss (siehe [Funktionsweise](/de/guide/how-it-works)). |
+| **Überschuss** (`surplus`) | Standard-Hysterese-Verhalten: startet und stoppt bei anhaltendem PV-Überschuss (siehe [Funktionsweise](/de/guide/how-it-works)). Die Einstellungskarte zeigt *Startet die Ladung bei N W Überschuss – das Fahrzeug braucht mindestens M W.* (N = effektiver Startschwellenwert, M = Mindestladeleistung). |
 | **PV-Leistung** (`power_latch`) | Erreicht die PV-Erzeugung ihre **Startschwelle**, startet die Ladung und läuft **bis zum Abschluss** durch – sie stoppt nicht mehr, wenn die Erzeugung später sinkt. |
 | **Überschuss (fest)** (`surplus_latch`) | Wie oben, aber ausgelöst durch den berechneten **Überschuss** (PV abzüglich Haus-/Batterieverbrauch) statt der reinen PV-Erzeugung. |
 
 Wählst du **PV-Leistung** oder **Überschuss (fest)**, erscheinen zwei zusätzliche Eingaben:
 
-- **Startschwelle** – der Auslösewert (W, in 100-W-Schritten), der die Ladung für dieses Profil scharf schaltet.
+- **Startschwelle** – der Auslösewert (W, in 100-W-Schritten), der die Ladung für dieses Profil scharf schaltet. Das Eingabefeld zeigt immer, was du eingegeben hast; bei **Überschuss (fest)** wird der effektive Wert – auf evccs Mindestladeleistung angehoben, falls du weniger gewählt hast – als Hinweis daneben angezeigt. **PV-Leistung** wird nicht angehoben.
 - **Laden bis** – der Ziel-Ladezustand des Fahrzeugs (%, in 10-%-Schritten, 50–100), bei dem die Ladung stoppt.
 
 ::: tip Pro Profil, dauerhaft
@@ -107,6 +109,10 @@ Diese Einstellung ist **dauerhaft**: Sie übersteht Neustarts und Updates. Sie g
 ::: warning Netzbezug
 Der Modus **Volle Leistung** bezieht Strom aus dem Netz, wenn die PV-Erzeugung nicht ausreicht. Nutze ihn bewusst, wenn du unabhängig von den Solarbedingungen laden musst.
 :::
+
+## Maximaler Ladestrom
+
+Die Einstellung **Maximaler Ladestrom** begrenzt den Strom, den evcc nutzen darf (A). `wha` veröffentlicht sie als `loadpoints/<id>/maxCurrent/set`, begrenzt auf `control.maxCurrentCeilingA` (Nennstrom deines Stromkreises/deiner Wallbox), und setzt sie bei Reconnect und im Republish-Takt erneut durch. Sie ist dauerhaft. Nutze sie, wenn **Jetzt laden** ein in der Easee-App gesetztes Limit überschreitet: Im `now`-Modus überschreibt evcc vorübergehende App-Limits mit seinem eigenen Maximalstrom (Standard 16 A). evcc lehnt Werte unterhalb von `minCurrent` des Loadpoints ab (nur als ERROR im evcc-Log sichtbar); das Dashboard akzeptiert Werte von `control.minCurrentA` bis `control.maxCurrentCeilingA`. Leeres Feld (oder `0`) hebt die Begrenzung auf, indem sie auf `control.maxCurrentCeilingA` gesetzt wird; diesen Wert veröffentlicht `wha` ab dann weiter. Hat `wha` nie ein Limit gesetzt, passiert beim Löschen nichts. Da das Aufheben evccs `maxCurrent` auf die Obergrenze setzt – die sich von dem unterscheiden kann, was evcc hatte, bevor `wha` es erstmals berührte –, setze die Obergrenze auf den Nennstrom deines Stromkreises/deiner Wallbox.
 
 ## Über den Deckel hinaus laden
 

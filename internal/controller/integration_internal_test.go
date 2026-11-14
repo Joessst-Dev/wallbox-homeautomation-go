@@ -61,6 +61,13 @@ var _ = Describe("Controller integration (real store)", func() {
 		cfg = config.Default().Control
 		cfg.StartDwell = 0 // most specs want the surplus edge to resolve immediately
 		cfg.StopDwell = 0
+		// A single-phase 6 A loadpoint: the min-charge-power floor (6 × 230 × 1 =
+		// 1380 W, no margin) stays below the 1400 W start threshold these specs
+		// were written against. The floor itself is covered in floor_test.go
+		// (Decide / MinChargePowerW) and status_internal_test.go (loop + Status).
+		cfg.MinCurrentA = 6
+		cfg.Phases = 1
+		cfg.StartMarginW = 0
 		cmd = &fakeCommander{}
 		snaps = &fakeSnaps{}
 		st = newRealStore()

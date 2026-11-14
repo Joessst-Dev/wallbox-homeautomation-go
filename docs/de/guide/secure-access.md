@@ -74,6 +74,10 @@ vertrauende Gerät zeigt wieder eine Zertifikatswarnung, bis es der neuen Wurzel
 erneut vertraut.
 :::
 
+## Reverse-Proxy und Host-Header
+
+Die schreibenden Endpunkte des Dashboards lehnen Cross-Site-Anfragen ab: Eine Browser-Anfrage, deren `Origin`-Host nicht zu `Host` (oder dem ersten `X-Forwarded-Host`) passt, erhält `403` (siehe [API → Schutz vor Cross-Site-Schreibzugriffen](/de/reference/api#schutz-vor-cross-site-schreibzugriffen)). Das mitgelieferte Caddy reicht `Host` unverändert durch, du musst also nichts konfigurieren. Stellst du einen eigenen Proxy vor wha, muss auch er den ursprünglichen `Host` weiterleiten (oder `X-Forwarded-Host` setzen); sonst schlagen Dashboard-Schaltflächen mit 403 fehl.
+
 Für ein manuelles Setup (ohne `install.sh`) setzt du `WHA_SITE_ADDRESS` selbst
 (eine `.env`-Datei neben `docker-compose.yml` genügt), bevor du
 `docker compose up -d` ausführst.
